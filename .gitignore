@@ -34,3 +34,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# demo assets — real patient/citizen documents, even when names look fictional,
+# stay out of the public repo. Drop test images here locally; they will not be
+# committed.
+/demo_assets/*
+!/demo_assets/.gitkeep
