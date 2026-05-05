@@ -169,6 +169,21 @@ export const SimplificationSchema = z.object({
 });
 export type Simplification = z.infer<typeof SimplificationSchema>;
 
+// ─── ISL dictionary entry (data/isl_dictionary.json) ────────────────────────
+export interface ISLDictionaryEntry {
+  /** Canonical English term as it should appear in the simplified text. */
+  term: string;
+  /** Optional inflections / synonyms that should also resolve to this entry. */
+  aliases?: string[];
+  /** Direct URL to the sign video, OR a link to the ISLRTC page for the term
+   *  if the video itself isn't legally hostable. The ISL chip will use a
+   *  <video> if the URL ends in a recognised extension; otherwise it will
+   *  open the URL in a new tab. */
+  videoUrl: string;
+  /** Optional short caption shown beside the video. */
+  caption?: string;
+}
+
 // ─── Pipeline response (what /api/process returns to the client) ─────────────
 export interface ProcessResponse {
   extraction: Extraction;            // PII reconstructed for client display

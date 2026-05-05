@@ -1,92 +1,236 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
-interface ProcessResponse {
-  description?: string;
-  error?: string;
-  meta?: {
-    filename: string;
-    size: number;
-    mimeType: string;
-    latencyMs: number;
-  };
+import { DocumentUploader } from "@/components/DocumentUploader";
+import { ProcessingStage } from "@/components/ProcessingStage";
+import { SideBySideViewer } from "@/components/SideBySideViewer";
+import type { Extraction, Simplification } from "@/lib/types";
+
+interface ProcessSuccess {
+  extraction: Extraction;
+  redactedExtraction: Extraction;
+  simplification: Simplification;
+  vaultSize: number;
+  warnings: string[];
+  meta: { totalLatencyMs: number; pages: number };
 }
 
-export default function Home() {
-  const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<ProcessResponse | null>(null);
+interface ProcessError {
+  error: string;
+  stage?: string;
+  detail?: string | string[];
+}
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!file) return;
-    setLoading(true);
-    setResult(null);
+type Stage =
+  | { kind: "idle" }
+  | { kind: "processing"; files: File[]; previews: string[] }
+  | { kind: "result"; data: ProcessSuccess; previews: string[]; files: File[] }
+  | { kind: "error"; error: ProcessError; previews: string[] };
+
+export default function Home() {
+  const [stage, setStage] = useState<Stage>({ kind: "idle" });
+
+  const handleSubmit = useCallback(async (files: File[]) => {
+    const previews = files.map((f) => URL.createObjectURL(f));
+    setStage({ kind: "processing", files, previews });
 
     const form = new FormData();
-    form.append("document", file);
+    for (const f of files) form.append("document", f);
 
     try {
       const res = await fetch("/api/process", { method: "POST", body: form });
-      const data: ProcessResponse = await res.json();
-      setResult(data);
+      const text = await res.text();
+      let body: unknown;
+      try {
+        body = JSON.parse(text);
+      } catch {
+        body = { error: `Server returned non-JSON response (${res.status}).`, detail: text.slice(0, 200) };
+      }
+
+      if (!res.ok) {
+        setStage({ kind: "error", error: body as ProcessError, previews });
+        return;
+      }
+      setStage({ kind: "result", data: body as ProcessSuccess, previews, files });
     } catch (err) {
-      setResult({ error: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setLoading(false);
+      setStage({
+        kind: "error",
+        error: { error: err instanceof Error ? err.message : String(err) },
+        previews,
+      });
     }
-  }
+  }, []);
+
+  const reset = useCallback(() => {
+    if (stage.kind !== "idle") {
+      for (const url of stage.previews ?? []) URL.revokeObjectURL(url);
+    }
+    setStage({ kind: "idle" });
+  }, [stage]);
 
   return (
-    <main className="min-h-screen bg-neutral-50 text-neutral-900 px-6 py-12">
-      <div className="mx-auto max-w-2xl space-y-6">
-        <header>
-          <h1 className="text-2xl font-semibold tracking-tight">SugamPath — Hello Gemini</h1>
-          <p className="text-sm text-neutral-600 mt-1">
-            Step 3 sanity check. Upload any document image; we ask Gemini for a one-sentence
-            description.
-          </p>
-        </header>
+    <main className="min-h-screen">
+      <SiteHeader showReset={stage.kind !== "idle"} onReset={reset} />
 
-        <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
-          <label className="block text-sm font-medium text-neutral-700">
-            Document image
-            <input
-              type="file"
-              accept="image/*,application/pdf"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              className="mt-2 block w-full text-sm text-neutral-700 file:mr-3 file:rounded-md file:border-0 file:bg-neutral-900 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-neutral-800"
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={!file || loading}
-            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:bg-neutral-300 disabled:cursor-not-allowed"
-          >
-            {loading ? "Calling Gemini…" : "Send to Gemini"}
-          </button>
-        </form>
+      {stage.kind === "idle" && (
+        <Landing>
+          <DocumentUploader onSubmit={handleSubmit} />
+        </Landing>
+      )}
 
-        {result && (
-          <section className="rounded-lg border border-neutral-200 bg-white p-6 shadow-sm space-y-3">
-            <h2 className="text-sm font-medium text-neutral-700">Response</h2>
-            {result.error ? (
-              <p className="text-sm text-red-600 whitespace-pre-wrap">{result.error}</p>
-            ) : (
-              <>
-                <p className="text-base whitespace-pre-wrap">{result.description}</p>
-                {result.meta && (
-                  <p className="text-xs text-neutral-500">
-                    {result.meta.filename} · {(result.meta.size / 1024).toFixed(1)} KB ·{" "}
-                    {result.meta.mimeType} · {result.meta.latencyMs} ms
-                  </p>
-                )}
-              </>
-            )}
-          </section>
-        )}
-      </div>
+      {stage.kind === "processing" && (
+        <ProcessingStage previews={stage.previews} fileCount={stage.files.length} />
+      )}
+
+      {stage.kind === "result" && (
+        <SideBySideViewer
+          previews={stage.previews}
+          extraction={stage.data.extraction}
+          simplification={stage.data.simplification}
+          vaultSize={stage.data.vaultSize}
+          meta={stage.data.meta}
+        />
+      )}
+
+      {stage.kind === "error" && <ErrorView error={stage.error} onReset={reset} />}
     </main>
+  );
+}
+
+/* ───── Header ─────────────────────────────────────────────────────────── */
+
+function SiteHeader({ showReset, onReset }: { showReset: boolean; onReset: () => void }) {
+  return (
+    <header className="px-8 lg:px-16 pt-8 pb-6 flex items-baseline justify-between border-b" style={{ borderColor: "var(--ink-faint)" }}>
+      <div className="flex items-baseline gap-3">
+        <span className="text-2xl" aria-hidden>📄</span>
+        <span
+          className="display"
+          style={{ fontSize: "var(--t-lg)", letterSpacing: "-0.025em" }}
+        >
+          SugamPath
+        </span>
+        <span className="mono-label hidden sm:inline ml-2">v0 · hackathon prototype</span>
+      </div>
+
+      {showReset && (
+        <button
+          onClick={onReset}
+          className="mono-label hover:text-[color:var(--ink)] transition-colors"
+          style={{ color: "var(--ink-quiet)" }}
+        >
+          ← upload another
+        </button>
+      )}
+    </header>
+  );
+}
+
+/* ───── Landing wrapper ────────────────────────────────────────────────── */
+
+function Landing({ children }: { children: React.ReactNode }) {
+  return (
+    <section className="px-8 lg:px-16 py-16 lg:py-24 max-w-6xl mx-auto">
+      <div className="grid lg:grid-cols-12 gap-12 lg:gap-16 items-start">
+        <div className="lg:col-span-7 fade-up">
+          <p className="mono-label mb-6">An accessibility bridge for Indian bureaucracy</p>
+          <h1
+            className="display mb-8"
+            style={{ fontSize: "clamp(2.25rem, 5vw, var(--t-3xl))" }}
+          >
+            Read what the&nbsp;State sends&nbsp;you.
+          </h1>
+          <p
+            className="max-w-prose"
+            style={{ fontSize: "var(--t-md)", color: "var(--ink-muted)", lineHeight: 1.6 }}
+          >
+            Upload any document — a hospital discharge, a court summons, a benefits letter,
+            a property notice. SugamPath rewrites it in plain words, reads it aloud, and
+            shows the key terms in Indian Sign Language. The original stays on the page.
+            Personal information never leaves your browser unprotected.
+          </p>
+        </div>
+
+        <div className="lg:col-span-5 fade-up fade-up-delay-2">
+          {children}
+        </div>
+      </div>
+
+      <div className="mt-24 grid sm:grid-cols-3 gap-12 fade-up fade-up-delay-3">
+        <Promise title="The original is authoritative">
+          We never replace your document. The simplified version sits beside it. You can
+          always check what the original says.
+        </Promise>
+        <Promise title="Critical fields cannot be paraphrased">
+          Drug names, doses, dates, money amounts, legal sections — these flow through
+          the pipeline as locked tokens. The model is structurally unable to alter them.
+        </Promise>
+        <Promise title="Your information stays here">
+          Names, IDs, phone numbers, and addresses are tokenised in your browser before
+          any external call. Nothing is stored. Nothing is logged.
+        </Promise>
+      </div>
+    </section>
+  );
+}
+
+function Promise({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p
+        className="mono-label mb-3"
+        style={{ color: "var(--navy)" }}
+      >
+        — promise
+      </p>
+      <h3 className="mb-3" style={{ fontSize: "var(--t-md)" }}>{title}</h3>
+      <p style={{ color: "var(--ink-muted)", fontSize: "var(--t-sm)", lineHeight: 1.6 }}>
+        {children}
+      </p>
+    </div>
+  );
+}
+
+/* ───── Error view ─────────────────────────────────────────────────────── */
+
+function ErrorView({ error, onReset }: { error: ProcessError; onReset: () => void }) {
+  return (
+    <section className="px-8 lg:px-16 py-24 max-w-2xl mx-auto fade-up">
+      <p className="mono-label mb-4" style={{ color: "var(--rust)" }}>— processing failed</p>
+      <h2 className="display mb-4" style={{ fontSize: "var(--t-xl)" }}>
+        We couldn’t process this document.
+      </h2>
+      <p style={{ color: "var(--ink-muted)" }}>{error.error}</p>
+      {error.stage && (
+        <p className="mono-label mt-3">stage: {error.stage}</p>
+      )}
+      {error.detail && (
+        <pre
+          className="mono mt-6 p-4 overflow-x-auto"
+          style={{
+            background: "var(--paper-deep)",
+            fontSize: "var(--t-xs)",
+            color: "var(--ink-muted)",
+            border: "var(--hairline)",
+          }}
+        >
+          {Array.isArray(error.detail) ? error.detail.join("\n") : error.detail}
+        </pre>
+      )}
+      <button
+        onClick={onReset}
+        className="mt-8 px-5 py-3 transition-colors"
+        style={{
+          background: "var(--ink)",
+          color: "var(--paper)",
+          fontFamily: "var(--font-mono)",
+          fontSize: "var(--t-sm)",
+          letterSpacing: "0.05em",
+        }}
+      >
+        try a different document
+      </button>
+    </section>
   );
 }

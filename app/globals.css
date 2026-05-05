@@ -2,26 +2,186 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─────────────────────────────────────────────────────────────────────────
+   SugamPath design tokens
+   Editorial document gravitas. Off-white paper, deep ink, single navy
+   accent, turmeric reserved for critical-field underlines. Three colours
+   only — anything more cheapens it.
+   ───────────────────────────────────────────────────────────────────── */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Surfaces */
+  --paper:        #FAF8F3;   /* warm off-white paper */
+  --paper-deep:   #F2EEE5;   /* a step deeper for cards / panels */
+  --paper-sunk:   #ECE7DB;   /* pressed surfaces, hover-fill on quiet buttons */
+
+  /* Ink */
+  --ink:          #1A1A1A;   /* primary text */
+  --ink-muted:    #4A4742;   /* secondary text */
+  --ink-quiet:    #807A70;   /* tertiary, captions */
+  --ink-faint:    #B8B0A2;   /* hairlines, dividers */
+
+  /* Accents — used sparingly */
+  --navy:         #1F3A5F;   /* primary action, links, focus rings */
+  --navy-deep:    #142640;   /* navy on hover */
+  --turmeric:     #D4A53A;   /* critical-field underline tint */
+  --turmeric-bg:  rgba(212, 165, 58, 0.10);   /* critical-field background tint */
+  --rust:         #A23E1F;   /* destructive / warning ink (rare) */
+
+  /* Type stack — loaded via next/font/google in app/layout.tsx, exposed as
+     CSS variables --font-fraunces-loaded / --font-newsreader-loaded /
+     --font-jetbrains-loaded. We re-alias them here under semantic names. */
+  --font-display: var(--font-fraunces-loaded), Georgia, "Times New Roman", serif;
+  --font-body:    var(--font-newsreader-loaded), Georgia, "Times New Roman", serif;
+  --font-mono:    var(--font-jetbrains-loaded), "Source Code Pro", Consolas, monospace;
+
+  /* Optical-size variable axes (Fraunces, Newsreader) */
+  --opsz-display: 96;
+  --opsz-body:    16;
+
+  /* Type scale — major-third, anchored at 16px body */
+  --t-xs:   0.75rem;     /*  12 */
+  --t-sm:   0.875rem;    /*  14 */
+  --t-base: 1rem;        /*  16 */
+  --t-md:   1.125rem;    /*  18 */
+  --t-lg:   1.375rem;    /*  22 */
+  --t-xl:   1.875rem;    /*  30 */
+  --t-2xl:  2.625rem;    /*  42 */
+  --t-3xl:  3.75rem;     /*  60 */
+
+  /* Spatial rhythm */
+  --gutter-page: 4rem;
+  --gutter-col:  3rem;
+
+  /* Hairline */
+  --hairline: 1px solid var(--ink-faint);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ───── Base ──────────────────────────────────────────────────────────── */
+
+html, body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--t-base);
+  line-height: 1.55;
+  font-feature-settings: "kern", "liga", "onum";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
+/* Subtle paper grain — the only "trick" in the visual system. SVG noise
+   layered at 4% opacity over the whole page. Keeps surfaces from feeling
+   like a rendered slide deck. */
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  background-image:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.06 0 0 0 0 0.05 0 0 0 0 0.04 0 0 0 0.5 0'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.5'/></svg>");
+  background-repeat: repeat;
+  background-attachment: fixed;
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+::selection {
+  background: var(--turmeric-bg);
+  color: var(--ink);
+}
+
+/* Default focus — quiet but present. Real navigation = hairline navy. */
+*:focus-visible {
+  outline: 2px solid var(--navy);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ───── Headings ──────────────────────────────────────────────────────── */
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 350;
+  font-variation-settings: "opsz" var(--opsz-display), "SOFT" 30;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+/* ───── Mono treatment ────────────────────────────────────────────────── */
+
+.mono {
+  font-family: var(--font-mono);
+  font-feature-settings: "kern", "liga";
+}
+
+.mono-label {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-quiet);
+}
+
+/* ───── Critical-field span ───────────────────────────────────────────── */
+/* The structural-locking moment. Quiet underline + hover lift. NOT a chip. */
+
+.critical-field {
+  background: var(--turmeric-bg);
+  border-bottom: 1px solid var(--turmeric);
+  padding: 0 0.15em;
+  margin: 0 -0.05em;
+  border-radius: 1px;
+  letter-spacing: 0.005em;
+  cursor: help;
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+.critical-field:hover {
+  background: rgba(212, 165, 58, 0.18);
+  box-shadow: 0 1px 0 var(--turmeric);
+}
+
+/* ───── Hairline divider ──────────────────────────────────────────────── */
+
+.hairline {
+  border: 0;
+  border-top: var(--hairline);
+}
+
+/* ───── Page-load reveal ──────────────────────────────────────────────── */
+
+@keyframes sp-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-up {
+  animation: sp-fade-up 600ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.fade-up-delay-1 { animation-delay:  80ms; }
+.fade-up-delay-2 { animation-delay: 160ms; }
+.fade-up-delay-3 { animation-delay: 240ms; }
+.fade-up-delay-4 { animation-delay: 320ms; }
+
+/* ───── Caret blink for the loading narrative ─────────────────────────── */
+
+@keyframes sp-caret {
+  0%, 49%   { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.caret::after {
+  content: "▍";
+  margin-left: 2px;
+  animation: sp-caret 900ms steps(1, end) infinite;
+  color: var(--navy);
+}
+
+/* ───── ISL chip expand ───────────────────────────────────────────────── */
+
+@keyframes sp-chip-expand {
+  from { opacity: 0; transform: scaleY(0.85); transform-origin: top; }
+  to   { opacity: 1; transform: scaleY(1); }
+}
+.chip-expand {
+  animation: sp-chip-expand 200ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
