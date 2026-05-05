@@ -14,19 +14,19 @@ export function SafetyBadges({ vaultSize, pages, latencyMs }: Props) {
       <Badge
         icon={<Lock size={11} strokeWidth={2} />}
         value={vaultSize.toString().padStart(2, "0")}
-        label="items vaulted"
+        label={`personal ${vaultSize === 1 ? "detail" : "details"} kept private`}
         accent
         first
       />
       <Badge
         icon={<FileText size={11} strokeWidth={2} />}
         value={pages.toString().padStart(2, "0")}
-        label={`page${pages === 1 ? "" : "s"} read`}
+        label={`page${pages === 1 ? "" : "s"} read end-to-end`}
       />
       <Badge
         icon={<Timer size={11} strokeWidth={2} />}
-        value={`${(latencyMs / 1000).toFixed(1)}s`}
-        label="processing"
+        value={`${(latencyMs / 1000).toFixed(0)}s`}
+        label="careful reading time"
       />
     </div>
   );

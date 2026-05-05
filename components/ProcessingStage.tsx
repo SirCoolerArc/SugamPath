@@ -20,12 +20,12 @@ interface PipelineStep {
 }
 
 const PIPELINE: PipelineStep[] = [
-  { delayMs: 200,    text: "Reading the document",                  meta: "Gemini 2.5 Flash · vision pass" },
-  { delayMs: 4_500,  text: "Identifying personal information",      meta: "regex + LLM-flagged spans" },
-  { delayMs: 6_500,  text: "Tokenising it before any further call", meta: "names, IDs, addresses → opaque tokens" },
-  { delayMs: 9_000,  text: "Locking critical fields",               meta: "doses, dates, amounts cannot be paraphrased downstream" },
-  { delayMs: 13_000, text: "Rewriting in plain words",              meta: "active voice · short sentences · 5th-grade reading level" },
-  { delayMs: 22_000, text: "Restoring your information for display only", meta: "tokens replaced on the way back to your browser" },
+  { delayMs: 200,    text: "Reading your document with care",       meta: "looking at every page, slowly" },
+  { delayMs: 4_500,  text: "Finding the personal details on the page", meta: "your name, your numbers, your address" },
+  { delayMs: 6_500,  text: "Hiding them safely while we work",      meta: "nothing personal leaves your browser as plain text" },
+  { delayMs: 9_000,  text: "Keeping every important detail exact",  meta: "we cannot change a number, a date, or a name" },
+  { delayMs: 13_000, text: "Rewriting it in plain, kind words",     meta: "short sentences · everyday language" },
+  { delayMs: 22_000, text: "Putting your details back, only on your screen", meta: "just for you to read · we keep no copy" },
 ];
 
 interface Props {
@@ -70,7 +70,7 @@ export function ProcessingStage({ previews, fileCount }: Props) {
         {/* Narrative on the right */}
         <div className="lg:col-span-7">
           <p className="mono-label mb-6 fade-up">
-            — processing {fileCount} page{fileCount > 1 ? "s" : ""}
+            — reading {fileCount === 1 ? "your page" : `your ${fileCount} pages`}
           </p>
           <h2
             className="display mb-12 fade-up"
@@ -91,12 +91,15 @@ export function ProcessingStage({ previews, fileCount }: Props) {
           </ol>
 
           <p
-            className="mono mt-16"
-            style={{ color: "var(--ink-quiet)", fontSize: "var(--t-xs)" }}
+            className="mt-16"
+            style={{
+              color: "var(--ink-quiet)",
+              fontSize: "var(--t-sm)",
+              fontStyle: "italic",
+              fontFamily: "var(--font-body)",
+            }}
           >
-            elapsed&nbsp;&nbsp;<span style={{ color: "var(--ink-muted)" }}>
-              {(elapsed / 1000).toFixed(1)}s
-            </span>
+            Thank you for your patience. Reading the State&rsquo;s words slowly is the careful thing to do.
           </p>
         </div>
       </div>

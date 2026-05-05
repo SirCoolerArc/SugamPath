@@ -162,9 +162,10 @@ function Landing({ children }: { children: React.ReactNode }) {
           We never replace your document. The simplified version sits beside it. You can
           always check what the original says.
         </Promise>
-        <Promise title="Critical fields cannot be paraphrased">
-          Drug names, doses, dates, money amounts, legal sections — these flow through
-          the pipeline as locked tokens. The model is structurally unable to alter them.
+        <Promise title="Every important detail stays exact">
+          Names, numbers, dates, amounts, legal sections — anything the document
+          treats as load-bearing — pass through untouched. The simplified version
+          cannot accidentally change a word that matters.
         </Promise>
         <Promise title="Your information stays here">
           Names, IDs, phone numbers, and addresses are tokenised in your browser before
