@@ -23,9 +23,17 @@ const PERMISSIVE_SAFETY_SETTINGS: SafetySetting[] = [
   { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
 ];
 
+export interface GeminiImage {
+  base64: string;
+  mimeType: string;
+}
+
 export interface CallGeminiOptions {
+  /** Single image — convenience field; equivalent to `images: [{ base64, mimeType }]`. */
   imageBase64?: string;
   imageMimeType?: string;
+  /** Multiple images for multi-page documents. Sent in order. */
+  images?: GeminiImage[];
   timeoutMs?: number;
 }
 
@@ -56,13 +64,15 @@ export async function callGemini(
   const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [
     { text: prompt },
   ];
+
+  // Normalise both single-image and multi-image inputs into one list.
+  const images: GeminiImage[] = [];
+  if (options.images?.length) images.push(...options.images);
   if (options.imageBase64) {
-    parts.push({
-      inlineData: {
-        data: options.imageBase64,
-        mimeType: options.imageMimeType ?? "image/jpeg",
-      },
-    });
+    images.push({ base64: options.imageBase64, mimeType: options.imageMimeType ?? "image/jpeg" });
+  }
+  for (const img of images) {
+    parts.push({ inlineData: { data: img.base64, mimeType: img.mimeType } });
   }
 
   // generationConfig.thinkingConfig.thinkingBudget = 0 disables the model's

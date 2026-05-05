@@ -1,30 +1,25 @@
-// Run the extractor against an image and print the resulting JSON.
+// Run the extractor against one or more page images and print the resulting JSON.
 //
 // Usage:
-//   npx tsx scripts/test_extractor.ts <path-to-image>
-//   npx tsx scripts/test_extractor.ts demo_assets/discharge_summary_mock.jpg
+//   npx tsx scripts/test_extractor.ts <path1> [path2] [path3] ...
+//   npx tsx scripts/test_extractor.ts demo_assets/discharge_real_page2.png
+//   npx tsx scripts/test_extractor.ts demo_assets/discharge_real_page1.png demo_assets/discharge_real_page2.png demo_assets/discharge_real_page3.png
 //
-// If no path is given, looks for demo_assets/discharge_summary_mock.{jpg,png,jpeg}.
+// If no paths are given, looks for demo_assets/discharge_real_page*.png in
+// numeric order.
 //
 // What it prints:
-//   1. Token-budget meta (size of image, latency)
+//   1. Token-budget meta (image sizes, total latency)
 //   2. The PII-reconstructed extraction (what the user sees)
 //   3. The redacted extraction (what flows downstream to the simplifier)
 //   4. The vault map
-//   5. A diff against benchmark §3 (counts only, not exact-string match — the
-//      mock is meant to be a guide, not a golden literal)
+//   5. Structure counts (compare to benchmark §3 expectations)
 
 import fs from "node:fs/promises";
 import path from "node:path";
 
 import { extract, ExtractionFailedError } from "../lib/extractor";
-
-const DEFAULT_PATHS = [
-  "demo_assets/discharge_summary_mock.jpg",
-  "demo_assets/discharge_summary_mock.jpeg",
-  "demo_assets/discharge_summary_mock.png",
-  "demo_assets/discharge_summary.pdf",
-];
+import type { GeminiImage } from "../lib/gemini_client";
 
 const MIME_BY_EXT: Record<string, string> = {
   ".jpg": "image/jpeg",
@@ -35,7 +30,6 @@ const MIME_BY_EXT: Record<string, string> = {
 };
 
 async function loadEnv(): Promise<void> {
-  // Minimal .env.local loader — Next handles this in the app, but tsx doesn't.
   try {
     const text = await fs.readFile(path.join(process.cwd(), ".env.local"), "utf-8");
     for (const line of text.split("\n")) {
@@ -47,46 +41,64 @@ async function loadEnv(): Promise<void> {
   }
 }
 
-async function resolveImagePath(arg: string | undefined): Promise<string> {
-  if (arg) {
-    await fs.access(arg);
-    return arg;
+async function discoverDefaultPages(): Promise<string[]> {
+  const dir = "demo_assets";
+  let files: string[];
+  try {
+    files = await fs.readdir(dir);
+  } catch {
+    return [];
   }
-  for (const candidate of DEFAULT_PATHS) {
-    try {
-      await fs.access(candidate);
-      return candidate;
-    } catch {
-      // try next
-    }
-  }
-  throw new Error(
-    `No image path given and none of these exist: ${DEFAULT_PATHS.join(", ")}\n` +
-      `Either pass a path as the first arg, or drop a photo of the benchmark mock at demo_assets/discharge_summary_mock.jpg.`,
-  );
+  const pages = files
+    .filter((f) => /^discharge_real_page\d+\.(png|jpe?g)$/i.test(f))
+    .sort((a, b) => {
+      const numA = parseInt(a.match(/\d+/)?.[0] ?? "0", 10);
+      const numB = parseInt(b.match(/\d+/)?.[0] ?? "0", 10);
+      return numA - numB;
+    })
+    .map((f) => path.join(dir, f));
+  return pages;
+}
+
+async function loadImage(filePath: string): Promise<GeminiImage> {
+  const ext = path.extname(filePath).toLowerCase();
+  const mimeType = MIME_BY_EXT[ext];
+  if (!mimeType) throw new Error(`Unknown image extension ${ext} for ${filePath}`);
+  const buffer = await fs.readFile(filePath);
+  return { base64: buffer.toString("base64"), mimeType };
 }
 
 async function main(): Promise<void> {
   await loadEnv();
 
-  const arg = process.argv[2];
-  const imagePath = await resolveImagePath(arg);
-  const ext = path.extname(imagePath).toLowerCase();
-  const mimeType = MIME_BY_EXT[ext];
-  if (!mimeType) throw new Error(`Unknown image extension ${ext}`);
+  let paths = process.argv.slice(2);
+  if (paths.length === 0) {
+    paths = await discoverDefaultPages();
+    if (paths.length === 0) {
+      throw new Error(
+        "No image paths given and demo_assets/discharge_real_page*.png not found.\n" +
+          "Pass one or more image paths as arguments.",
+      );
+    }
+    console.log(`(auto-discovered ${paths.length} page${paths.length === 1 ? "" : "s"})`);
+  }
 
-  const buffer = await fs.readFile(imagePath);
-  const base64 = buffer.toString("base64");
-
-  console.log(`Image:    ${imagePath}`);
-  console.log(`Size:     ${(buffer.length / 1024).toFixed(1)} KB`);
-  console.log(`MimeType: ${mimeType}`);
+  const images: GeminiImage[] = [];
+  let totalBytes = 0;
+  for (const p of paths) {
+    const img = await loadImage(p);
+    images.push(img);
+    const bytes = Buffer.from(img.base64, "base64").length;
+    totalBytes += bytes;
+    console.log(`Image:    ${p}  (${(bytes / 1024).toFixed(1)} KB, ${img.mimeType})`);
+  }
+  console.log(`Total:    ${images.length} image(s), ${(totalBytes / 1024).toFixed(1)} KB`);
   console.log("");
 
   const startedAt = Date.now();
   let result;
   try {
-    result = await extract({ imageBase64: base64, imageMimeType: mimeType });
+    result = await extract({ images });
   } catch (err) {
     if (err instanceof ExtractionFailedError) {
       console.error("EXTRACTION FAILED");
@@ -124,15 +136,16 @@ async function main(): Promise<void> {
   }
 
   console.log("\n═══════════════════════════════════════════════════════════════════");
-  console.log(" 4. STRUCTURE COUNTS (compare to benchmark §3 expectations)");
+  console.log(" 4. STRUCTURE COUNTS");
   console.log("═══════════════════════════════════════════════════════════════════");
   console.log(`  document_type:    ${result.extraction.document_type}`);
   console.log(`  language:         ${result.extraction.language_detected}`);
+  console.log(`  issuing_authority:${result.extraction.issuing_authority}`);
   console.log(`  paragraphs:       ${result.extraction.paragraphs.length}`);
-  console.log(`  critical_fields:  ${result.extraction.critical_fields.length}  (benchmark expects ~17)`);
-  console.log(`  action_items:     ${result.extraction.action_items.length}     (benchmark expects ~6)`);
-  console.log(`  warning_signs:    ${result.extraction.warning_signs.length}     (benchmark expects 5)`);
-  console.log(`  red_flags:        ${result.extraction.red_flags.length}     (benchmark expects 0 for clean doc)`);
+  console.log(`  critical_fields:  ${result.extraction.critical_fields.length}`);
+  console.log(`  action_items:     ${result.extraction.action_items.length}`);
+  console.log(`  warning_signs:    ${result.extraction.warning_signs.length}`);
+  console.log(`  red_flags:        ${result.extraction.red_flags.length}`);
 }
 
 main().catch((err) => {
