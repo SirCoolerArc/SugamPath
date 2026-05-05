@@ -17,27 +17,43 @@ export function DocumentUploader({ onSubmit }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const addFiles = useCallback((incoming: FileList | File[]) => {
-    const next = [...files];
-    for (const f of Array.from(incoming)) {
-      if (!f.type.match(/^(image\/|application\/pdf$)/)) continue;
-      if (next.some((existing) => existing.name === f.name && existing.size === f.size)) continue;
-      next.push(f);
-    }
-    const total = next.reduce((sum, f) => sum + f.size, 0);
-    if (total > MAX_TOTAL_BYTES) {
-      setError(`Total upload exceeds ${MAX_TOTAL_BYTES / 1024 / 1024} MB.`);
-      return;
-    }
-    setError(null);
-    setFiles(next);
-  }, [files]);
+    setFiles((prev) => {
+      const next = [...prev];
+      const rejected: string[] = [];
+      for (const f of Array.from(incoming)) {
+        // Accept by extension as a fallback when MIME is missing (Windows
+        // sometimes reports an empty `type` string for files dragged from
+        // Explorer, especially for PDFs and uncommon image formats).
+        const looksRight =
+          /^(image\/|application\/pdf$)/.test(f.type) ||
+          /\.(png|jpe?g|webp|gif|bmp|pdf|tiff?)$/i.test(f.name);
+        if (!looksRight) {
+          rejected.push(f.name);
+          continue;
+        }
+        if (next.some((existing) => existing.name === f.name && existing.size === f.size)) continue;
+        next.push(f);
+      }
+      const total = next.reduce((sum, f) => sum + f.size, 0);
+      if (total > MAX_TOTAL_BYTES) {
+        setError(`Total upload exceeds ${MAX_TOTAL_BYTES / 1024 / 1024} MB.`);
+        return prev;
+      }
+      if (rejected.length > 0 && next.length === prev.length) {
+        setError(`Skipped ${rejected.join(", ")} — only images and PDFs are supported.`);
+      } else {
+        setError(null);
+      }
+      return next;
+    });
+  }, []);
 
   const removeFile = (idx: number) => {
     setFiles(files.filter((_, i) => i !== idx));
     setError(null);
   };
 
-  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+  const handleDrop = (e: DragEvent<HTMLElement>) => {
     e.preventDefault();
     setDragOver(false);
     if (e.dataTransfer.files) addFiles(e.dataTransfer.files);
@@ -60,15 +76,14 @@ export function DocumentUploader({ onSubmit }: Props) {
         transition: "border-color 120ms ease, border-width 120ms ease",
       }}
     >
-      <div
+      <label
         onDragOver={(e) => {
           e.preventDefault();
           setDragOver(true);
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        onClick={() => inputRef.current?.click()}
-        className="px-8 py-12 text-center cursor-pointer"
+        className="block px-8 py-12 text-center cursor-pointer"
         style={{ borderBottom: files.length > 0 ? "var(--hairline)" : "none" }}
       >
         <Upload
@@ -91,10 +106,16 @@ export function DocumentUploader({ onSubmit }: Props) {
           type="file"
           accept={ACCEPT}
           multiple
-          className="hidden"
-          onChange={(e) => e.target.files && addFiles(e.target.files)}
+          className="sr-only"
+          onChange={(e) => {
+            if (e.target.files && e.target.files.length > 0) {
+              addFiles(e.target.files);
+            }
+            // Reset so picking the same file twice still fires onChange.
+            e.target.value = "";
+          }}
         />
-      </div>
+      </label>
 
       {files.length > 0 && (
         <div className="divide-y" style={{ borderColor: "var(--ink-faint)" }}>
