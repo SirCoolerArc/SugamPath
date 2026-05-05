@@ -66,6 +66,31 @@ export const ActionItemSchema = z.object({
 });
 export type ActionItem = z.infer<typeof ActionItemSchema>;
 
+// ─── PII spans (LLM-emitted, regex-augmenting) ───────────────────────────────
+// The extractor's JSON includes a `pii_spans` array listing every PII
+// fragment the LLM transcribed. The downstream PII vault uses these as
+// additional candidates to tokenise alongside its regex matches. Optional in
+// the schema so older-format responses still validate.
+export const PII_SPAN_KINDS = [
+  "NAME",
+  "ADDRESS",
+  "PHONE",
+  "AADHAAR",
+  "PAN",
+  "DATE",
+  "UHID",
+  "MONEY",
+  "EMAIL",
+  "URL_PERSONAL",
+  "OTHER",
+] as const;
+
+export const PIISpanSchema = z.object({
+  kind: z.string().min(1),
+  value: z.string().min(1),
+});
+export type PIISpan = z.infer<typeof PIISpanSchema>;
+
 // ─── Top-level extraction output ─────────────────────────────────────────────
 export const ExtractionSchema = z.object({
   document_type: z.string().min(1),
@@ -78,6 +103,7 @@ export const ExtractionSchema = z.object({
   action_items: z.array(ActionItemSchema),
   warning_signs: z.array(z.string().min(1)).default([]),
   red_flags: z.array(z.string()).default([]),
+  pii_spans: z.array(PIISpanSchema).default([]),
 });
 export type Extraction = z.infer<typeof ExtractionSchema>;
 

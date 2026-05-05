@@ -81,13 +81,12 @@ export const PII_PATTERNS: PIIPattern[] = [
     valueGroup: 1,
   },
 
-  // 6. Dates in DD/MM/YYYY (Indian standard) and DD/MM/YY (older formats seen
-  //    on Bengal discharge summaries, e.g. "21/04/11"). Also supports DD-MM-.
-  //    The 4-digit-year alternative is listed first so YYYY wins when both
-  //    could match.
+  // 6. Dates in DD/MM/YYYY (Indian standard), DD/MM/YY, and DD.MM.YYYY (used
+  //    on legal notices and government memos, e.g. "13.09.2017"). Supports
+  //    /, -, and . as separators; year may be 2- or 4-digit.
   {
     kind: "DATE",
-    regex: /\b(\d{2}[/-]\d{2}[/-](?:\d{4}|\d{2}))\b/g,
+    regex: /\b(\d{2}[/.\-]\d{2}[/.\-](?:\d{4}|\d{2}))\b/g,
     valueGroup: 1,
   },
 
@@ -130,12 +129,14 @@ export const PII_PATTERNS: PIIPattern[] = [
   //       "Consultant's Name: Dr. GAUTAM MUKHOPADHYAY"
   //       "Patient Name: Mr. Ramesh Kumar"
   //     Captures up to four name tokens (Word, ALL-CAPS, or initial), tolerating
-  //     an optional "Dr." / "Mr." prefix inside the value. Stops at end-of-line
-  //     or at the next labelled column ("Sex:", "Age:", etc.).
+  //     an optional "Dr." / "Mr." prefix inside the value. Stops at end-of-line,
+  //     at the next labelled column (single space "Sex: Male" or two-space
+  //     "Sex: Male" — Gemini sometimes collapses column whitespace), or at a
+  //     parenthesis (consultant role suffix like "(Consultant Onco Surgeon)").
   {
     kind: "NAME",
     regex:
-      /\b(?:Patient\s*Name|Name\s*of\s*Patient|Guardian'?s?\s*Name|Consultant'?s?\s*Name|Name\s*of\s*MO\s*\/?\s*Consultant)\s*:\s+(?:Dr\.?|Mr\.?|Mrs\.?|Ms\.?|Smt\.?|Shri)?\s*((?:[A-Z][A-Za-z]*\.?[ \t]*){1,5})(?=\s*$|\s{2,}[A-Z][a-z]+\s*:|\n)/gm,
+      /\b(?:Patient\s*Name|Name\s*of\s*Patient|Guardian'?s?\s*Name|Consultant'?s?\s*Name|Name\s*of\s*MO\s*\/?\s*Consultant)\s*:\s+(?:Dr\.?|Mr\.?|Mrs\.?|Ms\.?|Smt\.?|Shri)?\s*((?:[A-Z][A-Za-z]*\.?[ \t]*){1,5}?)(?=\s*$|\s+[A-Z][a-z]+\s*:|\s*\(|\n)/gm,
     valueGroup: 1,
   },
 
