@@ -210,13 +210,21 @@ async function main(): Promise<void> {
   const final = reconstructSimplification(withCriticals, vault);
   printSimplification("3. AFTER PII RECONSTRUCTION (final client-bound payload)", final);
 
-  // Diagnostics.
-  const unresolved = findUnresolvedPlaceholders(simplification);
-  if (unresolved.length) {
-    console.log(`\n⚠ Unresolved {{cN}} placeholders: ${unresolved.join(", ")}`);
-    console.log(`  These ids appeared in the simplifier output but are not in the extraction's critical_fields.`);
+  // Diagnostics: a placeholder is "unresolved" only if it survives the
+  // critical-field substitution pass — that is, the simplifier referenced an
+  // id that doesn't exist in the extraction's critical_fields.
+  const requested = findUnresolvedPlaceholders(simplification);
+  const survived = findUnresolvedPlaceholders(withCriticals);
+  const knownIds = new Set(extraction.critical_fields.map((c) => c.id));
+  const unknown = requested.filter((id) => !knownIds.has(id));
+
+  console.log(`\n${requested.length} placeholder reference(s); ${survived.length} unresolved after substitution.`);
+  if (unknown.length) {
+    console.log(`⚠ Hallucinated placeholder ids (not in critical_fields): ${unknown.join(", ")}`);
+  } else if (survived.length === 0) {
+    console.log(`✓ Every {{cN}} reference resolved to a real critical field.`);
   } else {
-    console.log(`\n✓ All {{cN}} placeholders resolved cleanly.`);
+    console.log(`⚠ ${survived.length} placeholder(s) survived substitution: ${survived.join(", ")}`);
   }
 }
 
