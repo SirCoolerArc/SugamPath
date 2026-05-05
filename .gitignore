@@ -40,3 +40,7 @@ next-env.d.ts
 # committed.
 /demo_assets/*
 !/demo_assets/.gitkeep
+
+# cached extractions for dev iteration. Contain real PII reconstructed from
+# whatever the user uploaded; never commit.
+/scripts/cache/

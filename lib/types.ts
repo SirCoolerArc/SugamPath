@@ -142,10 +142,38 @@ export function extractionInvariantViolations(e: Extraction): string[] {
   return errors;
 }
 
+// ─── Simplification (Checkpoint 4.3 output) ──────────────────────────────────
+// What the simplifier emits, before any client-side post-processing. Critical
+// field references appear as `{{cN}}` placeholders that the renderer
+// substitutes later. PII tokens (e.g. `[NAME_001]`) flow through untouched
+// until the final reconstruct pass on the client-bound payload.
+export const SimplifiedSectionSchema = z.object({
+  heading: z.string().min(1),
+  body: z.string().min(1),
+});
+export type SimplifiedSection = z.infer<typeof SimplifiedSectionSchema>;
+
+export const SimplifiedActionSchema = z.object({
+  id: z.string().regex(/^a\d+$/),
+  what: z.string().min(1),
+  deadline_plain: z.string().min(1),
+  verify_with_plain: z.string().min(1),
+});
+export type SimplifiedAction = z.infer<typeof SimplifiedActionSchema>;
+
+export const SimplificationSchema = z.object({
+  language: z.string().min(1),                 // 'en' for Stage 0
+  sections: z.array(SimplifiedSectionSchema),
+  simplified_actions: z.array(SimplifiedActionSchema),
+  warnings_plain: z.array(z.string().min(1)).default([]),
+});
+export type Simplification = z.infer<typeof SimplificationSchema>;
+
 // ─── Pipeline response (what /api/process returns to the client) ─────────────
 export interface ProcessResponse {
   extraction: Extraction;            // PII reconstructed for client display
   redactedExtraction: Extraction;    // tokenised form (what the simplifier saw)
+  simplification: Simplification;    // PII reconstructed; {{cN}} substituted to HTML spans
   vaultSize: number;                 // for the "PII vaulted" badge
   warnings: string[];                // any non-fatal extraction notes
 }
