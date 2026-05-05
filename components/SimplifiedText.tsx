@@ -131,46 +131,55 @@ function renderTextWithChips(text: string, dictionary: ISLDictionaryEntry[]): Re
   ));
 }
 
-function chipifyLine(line: string, dictionary: ISLDictionaryEntry[]): React.ReactNode {
-  if (dictionary.length === 0) return line;
+// Module-level memo — built once per dictionary identity (which itself is
+// fetched once per page session). 10k+ terms × per-line regex would be
+// catastrophic; an O(words-in-line) hash lookup is fast.
+let cachedIndex: { dict: ISLDictionaryEntry[]; index: Map<string, ISLDictionaryEntry> } | null = null;
 
-  // Build a single regex of all terms + aliases. Sort longest-first so
-  // multi-word matches win over their shorter substrings.
-  const candidates: { matchText: string; entry: ISLDictionaryEntry }[] = [];
+function getIndex(dictionary: ISLDictionaryEntry[]): Map<string, ISLDictionaryEntry> {
+  if (cachedIndex && cachedIndex.dict === dictionary) return cachedIndex.index;
+  const index = new Map<string, ISLDictionaryEntry>();
   for (const entry of dictionary) {
-    candidates.push({ matchText: entry.term, entry });
-    for (const alias of entry.aliases ?? []) candidates.push({ matchText: alias, entry });
-  }
-  candidates.sort((a, b) => b.matchText.length - a.matchText.length);
-  if (candidates.length === 0) return line;
-
-  const pattern = new RegExp(
-    `\\b(${candidates.map((c) => escapeRegex(c.matchText)).join("|")})\\b`,
-    "gi",
-  );
-
-  const parts: React.ReactNode[] = [];
-  let last = 0;
-  for (const match of line.matchAll(pattern)) {
-    const idx = match.index ?? 0;
-    if (idx > last) parts.push(line.slice(last, idx));
-    const matchedText = match[0];
-    const entry = candidates.find(
-      (c) => c.matchText.toLowerCase() === matchedText.toLowerCase(),
-    )?.entry;
-    if (entry) {
-      parts.push(
-        <ISLTermChip key={`${idx}-${matchedText}`} label={matchedText} entry={entry} />,
-      );
-    } else {
-      parts.push(matchedText);
+    const keys = [entry.term, ...(entry.aliases ?? [])];
+    for (const k of keys) {
+      const norm = k.toLowerCase().trim();
+      if (!norm) continue;
+      // First entry wins on collision so the dictionary's natural ordering
+      // (alphabetised by sync script) gives stable behaviour.
+      if (!index.has(norm)) index.set(norm, entry);
     }
-    last = idx + matchedText.length;
   }
-  if (last < line.length) parts.push(line.slice(last));
-  return parts.length > 0 ? parts : line;
+  cachedIndex = { dict: dictionary, index };
+  return index;
 }
 
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// Tokenise a line into [text, isWord] runs. A "word" is a contiguous run of
+// alphanumerics + an internal apostrophe; a "non-word" is everything else
+// (whitespace, punctuation, em-dashes). Preserving the non-word runs verbatim
+// keeps spacing and punctuation intact when we re-emit the line.
+function tokeniseLine(line: string): Array<{ text: string; isWord: boolean }> {
+  const out: Array<{ text: string; isWord: boolean }> = [];
+  const re = /[A-Za-z0-9]+(?:'[A-Za-z0-9]+)?/g;
+  let last = 0;
+  for (const match of line.matchAll(re)) {
+    const idx = match.index ?? 0;
+    if (idx > last) out.push({ text: line.slice(last, idx), isWord: false });
+    out.push({ text: match[0], isWord: true });
+    last = idx + match[0].length;
+  }
+  if (last < line.length) out.push({ text: line.slice(last), isWord: false });
+  return out;
+}
+
+function chipifyLine(line: string, dictionary: ISLDictionaryEntry[]): React.ReactNode {
+  if (dictionary.length === 0 || !line) return line;
+  const index = getIndex(dictionary);
+  const tokens = tokeniseLine(line);
+
+  return tokens.map((tok, i) => {
+    if (!tok.isWord) return <Fragment key={i}>{tok.text}</Fragment>;
+    const entry = index.get(tok.text.toLowerCase());
+    if (!entry) return <Fragment key={i}>{tok.text}</Fragment>;
+    return <ISLTermChip key={i} label={tok.text} entry={entry} />;
+  });
 }
