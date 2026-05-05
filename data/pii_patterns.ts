@@ -70,20 +70,24 @@ export const PII_PATTERNS: PIIPattern[] = [
     valueGroup: 1,
   },
 
-  // 5. UHID (hospital patient ID) — captured by the label, not by shape, since
-  //    the digits alone are indistinguishable from any other number. Same for
-  //    "MR No.", "Patient ID", "OPD No.".
+  // 5. UHID-style hospital IDs — captured by the label, not by shape, since the
+  //    digits alone are indistinguishable from any other number. Covers UHID,
+  //    MR No., Patient ID, OPD No., IP No./Number, and Bed No. seen on real
+  //    Indian hospital discharge summaries.
   {
     kind: "UHID",
-    regex: /\b(?:UHID(?:\s*No\.?)?|MR\s*No\.?|Patient\s*ID|OPD\s*No\.?)\s*:\s*([A-Z0-9-]+)\b/gi,
+    regex:
+      /\b(?:UHID(?:\s*No\.?)?|MR\s*No\.?|Patient\s*ID|OPD\s*No\.?|IP\.?\s*(?:No\.?|Number)|Bed\s*No\.?)\s*:\s*([A-Z0-9-]+)\b/gi,
     valueGroup: 1,
   },
 
-  // 6. Dates in DD/MM/YYYY (Indian standard). Also supports DD-MM-YYYY.
-  //    Two-digit years are out of scope — discharge summaries always use four.
+  // 6. Dates in DD/MM/YYYY (Indian standard) and DD/MM/YY (older formats seen
+  //    on Bengal discharge summaries, e.g. "21/04/11"). Also supports DD-MM-.
+  //    The 4-digit-year alternative is listed first so YYYY wins when both
+  //    could match.
   {
     kind: "DATE",
-    regex: /\b(\d{2}[/-]\d{2}[/-]\d{4})\b/g,
+    regex: /\b(\d{2}[/-]\d{2}[/-](?:\d{4}|\d{2}))\b/g,
     valueGroup: 1,
   },
 
@@ -107,14 +111,48 @@ export const PII_PATTERNS: PIIPattern[] = [
     valueGroup: 1,
   },
 
-  // 9. Person name with honorific cue. Captures one to four capitalised tokens
-  //    after a title; tokens may be full words ("Ramesh") or single-letter
-  //    initials ("S.", "B."). The honorific itself is preserved in output;
-  //    only the name is tokenised.
-  //    Examples (capture group only, not the title):
-  //      "Mr. Ramesh Kumar"               -> "Ramesh Kumar"
-  //      "Dr. Anand Kulkarni"             -> "Anand Kulkarni"
-  //      "Brig. (Dr.) S. B. Purkayastha"  -> "S. B. Purkayastha"
+  // 9. Address by label cue — for short addresses without a PIN code, e.g.
+  //    "Address: JHARGRAM (WEST MIDNAPOOR)". Captures the line content after
+  //    "Address:" up to end-of-line (or two-space separator on multi-column
+  //    headers). Restricted to ALL-CAPS or Title Case to avoid grabbing
+  //    "Address as advised by doctor".
+  {
+    kind: "ADDRESS",
+    regex:
+      /(?:^|[ \t]*\b)Address\s*:\s+([A-Z][A-Z0-9 ()/,.\-']{4,}?)(?=\s{2,}[A-Z][a-z]+:|\s*$|\n)/gm,
+    valueGroup: 1,
+  },
+
+  // 10. Person names introduced by ALL-CAPS-friendly header labels found on
+  //     hospital and benefits documents:
+  //       "Name of Patient: BIPLAB ROY"
+  //       "Guardian's Name: BENOY KUMAR ROY"
+  //       "Consultant's Name: Dr. GAUTAM MUKHOPADHYAY"
+  //       "Patient Name: Mr. Ramesh Kumar"
+  //     Captures up to four name tokens (Word, ALL-CAPS, or initial), tolerating
+  //     an optional "Dr." / "Mr." prefix inside the value. Stops at end-of-line
+  //     or at the next labelled column ("Sex:", "Age:", etc.).
+  {
+    kind: "NAME",
+    regex:
+      /\b(?:Patient\s*Name|Name\s*of\s*Patient|Guardian'?s?\s*Name|Consultant'?s?\s*Name|Name\s*of\s*MO\s*\/?\s*Consultant)\s*:\s+(?:Dr\.?|Mr\.?|Mrs\.?|Ms\.?|Smt\.?|Shri)?\s*((?:[A-Z][A-Za-z]*\.?[ \t]*){1,5})(?=\s*$|\s{2,}[A-Z][a-z]+\s*:|\n)/gm,
+    valueGroup: 1,
+  },
+
+  // 11. "Patient was also seen on referral by: Dr. X and Dr. Y" — capture each
+  //     doctor name after Dr./Mr./etc. inside a referral block. Listed before
+  //     the generic NAME pattern so the doctor names get tokenised even when
+  //     they are ALL-CAPS without a trailing Title-Case word.
+  {
+    kind: "NAME",
+    regex:
+      /\b(?:Dr|Mr|Mrs|Ms|Miss|Smt|Shri|Prof|Brig)\.?(?:[ \t]*\(Dr\.?\))?[ \t]+((?:[A-Z]\.?[ \t]+){0,3}[A-Z]{2,}(?:[ \t]+[A-Z]{2,}){0,3})\b/g,
+    valueGroup: 1,
+  },
+
+  // 12. Person name with honorific cue, mixed-case form (e.g. "Mr. Ramesh
+  //     Kumar", "Brig. (Dr.) S. B. Purkayastha"). Kept after the ALL-CAPS
+  //     variant above so neither eats the other.
   {
     kind: "NAME",
     regex:
@@ -122,7 +160,7 @@ export const PII_PATTERNS: PIIPattern[] = [
     valueGroup: 1,
   },
 
-  // 10. Institutional name — ALL-CAPS line containing a recognisable suffix
+  // 13. Institutional name — ALL-CAPS line containing a recognisable suffix
   //     (HOSPITAL, COURT, CORPORATION, AUTHORITY, BOARD, MUNICIPALITY, OFFICE,
   //     COMMISSION, TRIBUNAL, UNIVERSITY, COLLEGE). Line-anchored so it
   //     doesn't grab paragraph-internal capitalisation. Allows leading
