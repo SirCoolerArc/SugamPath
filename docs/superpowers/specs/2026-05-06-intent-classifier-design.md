@@ -2,7 +2,11 @@
 
 **Checkpoint:** Stage 2, 6.4 (CLAUDE.md §8 #20)
 **Date:** 2026-05-06
-**Status:** approved, ready for implementation plan
+**Status:** **deferred — not implemented for hackathon v1.**
+
+> A free-text follow-up input centres a literate user. SugamPath's primary user is a deaf adult or low-literacy adult who needs the simplification *because* composing a written question is hard. Building this feature dilutes the primary-user framing for the sake of a 30-second demo moment — the wrong trade. The "we translate, we don't decide" story is already established structurally (no advice in the simplifier prompt, faithfulness check, no persistence) without needing a literal refusal panel.
+>
+> Spec preserved as a record of the design decision. If a future version of the product builds an explicit caregiver / advocate affordance ("for whoever is helping you read this"), this design is a viable starting point — only the copy strings and the audience framing need to change.
 
 ---
 
