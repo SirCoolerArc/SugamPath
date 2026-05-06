@@ -326,7 +326,6 @@ function SiteHeader({ showReset, onReset }: { showReset: boolean; onReset: () =>
         >
           SugamPath
         </span>
-        <span className="mono-label hidden sm:inline ml-2">v0 · hackathon prototype</span>
       </div>
 
       {showReset && (

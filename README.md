@@ -1,5 +1,7 @@
 # SugamPath
 
+**Live deployment:** [sugam-path.vercel.app](https://sugam-path.vercel.app/)
+
 > India's State communicates in a register that mathematically excludes 18 million deaf citizens (and millions more low-literacy adults) from understanding their own rights. We built the bridge — and built it so it cannot lie.
 
 SugamPath is a web application that takes any Indian bureaucratic document — a hospital discharge summary, a court summons, a benefits letter, a property notice, a school report — and renders it in modalities a deaf user, a low-literacy user, or anyone overwhelmed by jargon can actually consume. The original document is always shown alongside the simplified rendition; the simplified text is never authoritative.
