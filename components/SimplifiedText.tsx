@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment } from "react";
 
 import { ISLTermChip } from "@/components/ISLTermChip";
 import { tokeniseLine, getIndex, resolveEntry } from "@/lib/chip_resolver";
@@ -8,10 +8,10 @@ import type { ISLDictionaryEntry, Simplification } from "@/lib/types";
 
 interface Props {
   simplification: Simplification;
+  dictionary: ISLDictionaryEntry[];
 }
 
-export function SimplifiedText({ simplification }: Props) {
-  const dictionary = useDictionary();
+export function SimplifiedText({ simplification, dictionary }: Props) {
 
   return (
     <div className="space-y-10">
@@ -40,29 +40,6 @@ export function SimplifiedText({ simplification }: Props) {
       ))}
     </div>
   );
-}
-
-/* ───── Dictionary loading ────────────────────────────────────────────── */
-
-function useDictionary(): ISLDictionaryEntry[] {
-  const [entries, setEntries] = useState<ISLDictionaryEntry[]>([]);
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const res = await fetch("/api/isl-dictionary");
-        if (!res.ok) return;
-        const json = (await res.json()) as ISLDictionaryEntry[];
-        if (alive && Array.isArray(json)) setEntries(json);
-      } catch {
-        // Empty dictionary is a valid state — chips just won't appear.
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
-  return entries;
 }
 
 /* ───── Body renderer ─────────────────────────────────────────────────── */

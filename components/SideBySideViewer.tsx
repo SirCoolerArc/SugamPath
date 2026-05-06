@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
+
 import { OriginalDocument } from "@/components/OriginalDocument";
 import { SimplifiedText } from "@/components/SimplifiedText";
 import { ActionItemsPanel } from "@/components/ActionItemsPanel";
@@ -8,10 +10,12 @@ import { AudioPlayer } from "@/components/AudioPlayer";
 import { InjectionNotice } from "@/components/InjectionNotice";
 import { ReadingFormSlider } from "@/components/ReadingFormSlider";
 import { LanguageToggle } from "@/components/LanguageToggle";
+import { buildSequence } from "@/lib/isl_sequencer";
 import type {
   Extraction,
   FaithfulnessResult,
   InjectionCheckResult,
+  ISLDictionaryEntry,
   ReadingLevel,
   Simplification,
   TargetLanguage,
@@ -50,6 +54,12 @@ export function SideBySideViewer({
   regenerating,
   regenerationError,
 }: Props) {
+  const dictionary = useDictionary();
+  const sequence = useMemo(
+    () => buildSequence(simplification, dictionary),
+    [simplification, dictionary],
+  );
+
   return (
     <section className="px-6 lg:px-12 pt-8 pb-32">
       {injection && injection.verdict === "SUSPICIOUS" && (
@@ -117,7 +127,7 @@ export function SideBySideViewer({
               transition: "opacity 200ms ease",
             }}
           >
-            <SimplifiedText simplification={simplification} />
+            <SimplifiedText simplification={simplification} dictionary={dictionary} />
 
             {(simplification.simplified_actions.length > 0 ||
               simplification.warnings_plain.length > 0) && (
@@ -133,4 +143,25 @@ export function SideBySideViewer({
       </div>
     </section>
   );
+}
+
+function useDictionary(): ISLDictionaryEntry[] {
+  const [entries, setEntries] = useState<ISLDictionaryEntry[]>([]);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/isl-dictionary");
+        if (!res.ok) return;
+        const json = (await res.json()) as ISLDictionaryEntry[];
+        if (alive && Array.isArray(json)) setEntries(json);
+      } catch {
+        // Empty dictionary is a valid state — chips just won't appear.
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return entries;
 }
