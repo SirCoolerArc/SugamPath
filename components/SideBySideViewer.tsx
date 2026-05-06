@@ -98,15 +98,23 @@ export function SideBySideViewer({
   const handleStop = () => setPlayback(null);
   const handleReplay = () => setPlayback({ currentIndex: 0, status: "playing" });
 
-  const activeChip = playback
+  // Guard against the race where simplification regenerates mid-playback:
+  // the useMemo recomputes `sequence` with the new (possibly shorter)
+  // simplification before the useEffect that resets `playback` to null
+  // gets a chance to run. Falling through gracefully on this render keeps
+  // the conditional player render below the only place that needs to know
+  // about it.
+  const activeItem = playback ? sequence[playback.currentIndex] : undefined;
+
+  const activeChip = activeItem
     ? {
-        sectionIndex: sequence[playback.currentIndex].sectionIndex,
-        tokenIndex: sequence[playback.currentIndex].tokenIndex,
+        sectionIndex: activeItem.sectionIndex,
+        tokenIndex: activeItem.tokenIndex,
       }
     : null;
 
-  const currentSectionHeading = playback
-    ? simplification.sections[sequence[playback.currentIndex].sectionIndex]?.heading ?? ""
+  const currentSectionHeading = activeItem
+    ? simplification.sections[activeItem.sectionIndex]?.heading ?? ""
     : "";
 
   return (
