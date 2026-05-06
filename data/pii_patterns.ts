@@ -161,7 +161,40 @@ export const PII_PATTERNS: PIIPattern[] = [
     valueGroup: 1,
   },
 
-  // 13. Institutional name — ALL-CAPS line containing a recognisable suffix
+  // 13. Devanagari-cue name — Hindi label "नाम" (name) followed by the value
+  //     up to end-of-line or the next labelled field. Captures one to five
+  //     Devanagari word tokens, tolerating an honorific (श्री / श्रीमती / डॉ.)
+  //     immediately before the value. Defence-in-depth: LLM Pass 2 also
+  //     enumerates these, but the regex pass catches Hindi-only documents
+  //     before any text leaves the API route.
+  {
+    kind: "NAME",
+    regex:
+      /नाम\s*:\s*(?:श्री|श्रीमती|कुमारी|डॉ\.?|डा\.?)?\s*((?:[ऀ-ॿ]+[ \t]*){1,5})(?=\s*$|\s{2,}|\n|[।,])/gm,
+    valueGroup: 1,
+  },
+
+  // 14. Devanagari-cue address — Hindi label "पता" (address). Captures the
+  //     line content after the colon up to end-of-line or two-space column
+  //     break. Devanagari range plus digits, common punctuation, and PIN.
+  {
+    kind: "ADDRESS",
+    regex:
+      /पता\s*:\s*([ऀ-ॿ0-9 ,./\-()]{4,}?)(?=\s*$|\s{2,}[ऀ-ॿ]+\s*:|\n)/gm,
+    valueGroup: 1,
+  },
+
+  // 15. Devanagari-cue date — Hindi label "दिनांक" (date). Value is digit-based
+  //     with /, -, or . separators; matches the same shapes as the Latin DATE
+  //     pattern but anchored on the Hindi label so we redact even if the
+  //     digit-only DATE rule above missed an unusual separator context.
+  {
+    kind: "DATE",
+    regex: /दिनांक\s*:\s*(\d{1,2}[/.\-]\d{1,2}[/.\-](?:\d{4}|\d{2}))\b/g,
+    valueGroup: 1,
+  },
+
+  // 16. Institutional name — ALL-CAPS line containing a recognisable suffix
   //     (HOSPITAL, COURT, CORPORATION, AUTHORITY, BOARD, MUNICIPALITY, OFFICE,
   //     COMMISSION, TRIBUNAL, UNIVERSITY, COLLEGE). Line-anchored so it
   //     doesn't grab paragraph-internal capitalisation. Allows leading
