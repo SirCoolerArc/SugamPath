@@ -45,6 +45,14 @@ export function AudioPlayer({ simplification, language }: Props) {
     window.speechSynthesis.cancel();
     const text = buildReadableText(simplification);
     if (!text.trim()) return;
+
+    // Resolve voices fresh at click time. The mount-time `voices` state is a
+    // best-effort prefetch; in production builds React effect timing can leave
+    // it empty even after the page settles. getVoices() is cached after the
+    // first call so this is cheap.
+    const liveVoices = window.speechSynthesis.getVoices();
+    const allVoices = liveVoices.length > 0 ? liveVoices : voices;
+
     const utter = new SpeechSynthesisUtterance(text);
     utter.rate = 0.92;
     utter.pitch = 1;
@@ -53,7 +61,7 @@ export function AudioPlayer({ simplification, language }: Props) {
     // attempts Latin tokens; the en-IN voice silently skips Devanagari runs,
     // which is what was making Hindi pages "only read the underlined parts".
     utter.lang = language === "en" ? "en-IN" : "hi-IN";
-    const preferredVoice = pickVoice(utter.lang, voices);
+    const preferredVoice = pickVoice(utter.lang, allVoices);
     if (preferredVoice) utter.voice = preferredVoice;
     utter.onend = () => setState("idle");
     utter.onerror = () => setState("idle");
