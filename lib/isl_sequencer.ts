@@ -1,4 +1,4 @@
-import { tokeniseLine, getIndex, resolveEntry } from "@/lib/chip_resolver";
+import { tokeniseLine, getIndex, resolveEntry, splitOnCriticalSpans } from "@/lib/chip_resolver";
 import type { ISLDictionaryEntry, ISLSequenceItem, Simplification } from "@/lib/types";
 
 /**
@@ -29,21 +29,25 @@ export function buildSequence(
     // ones that don't resolve), mirroring SimplifiedText's React keying so
     // the highlight target is identifiable by (sectionIndex, tokenIndex).
     let tokenIndex = 0;
-    const lines = section.body.split("\n");
-    for (const line of lines) {
-      const tokens = tokeniseLine(line);
-      for (const tok of tokens) {
-        if (!tok.isWord) continue;
-        const entry = resolveEntry(tok.text, index);
-        if (entry) {
-          out.push({
-            entry,
-            sectionIndex,
-            tokenIndex,
-            surface: tok.text,
-          });
+    const segments = splitOnCriticalSpans(section.body);
+    for (const seg of segments) {
+      if (seg.kind === "critical") continue; // critical-field HTML is rendered as a verbatim span, never chipified
+      const lines = seg.text.split("\n");
+      for (const line of lines) {
+        const tokens = tokeniseLine(line);
+        for (const tok of tokens) {
+          if (!tok.isWord) continue;
+          const entry = resolveEntry(tok.text, index);
+          if (entry) {
+            out.push({
+              entry,
+              sectionIndex,
+              tokenIndex,
+              surface: tok.text,
+            });
+          }
+          tokenIndex++;
         }
-        tokenIndex++;
       }
     }
   });

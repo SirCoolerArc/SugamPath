@@ -70,3 +70,33 @@ export function resolveEntry(
   }
   return index.get(surface.toLowerCase());
 }
+
+/* ───── Critical-span splitter ─────────────────────────────────────────── */
+// Matches the verbatim critical-field spans the simplifier inlines in the body.
+// Kept private — the regex is an implementation detail; consumers use the
+// exported splitOnCriticalSpans function.
+const CRITICAL_SPAN_RE = /<span class="critical-field"[\s\S]*?<\/span>/g;
+
+export interface CriticalSegment { kind: "critical"; html: string }
+export interface TextSegment { kind: "text"; text: string }
+export type Segment = CriticalSegment | TextSegment;
+
+/**
+ * Split a section body into alternating text and critical-field-span segments.
+ * The sequencer and the renderer both call this first so they walk exactly the
+ * same set of plain-text tokens — critical-field HTML is never tokenised.
+ */
+export function splitOnCriticalSpans(body: string): Segment[] {
+  const segments: Segment[] = [];
+  let lastIndex = 0;
+  for (const match of body.matchAll(CRITICAL_SPAN_RE)) {
+    const idx = match.index ?? 0;
+    if (idx > lastIndex) segments.push({ kind: "text", text: body.slice(lastIndex, idx) });
+    segments.push({ kind: "critical", html: match[0] });
+    lastIndex = idx + match[0].length;
+  }
+  if (lastIndex < body.length) {
+    segments.push({ kind: "text", text: body.slice(lastIndex) });
+  }
+  return segments;
+}

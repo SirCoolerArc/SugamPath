@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useRef } from "react";
 
 import { ISLTermChip } from "@/components/ISLTermChip";
-import { tokeniseLine, getIndex, resolveEntry } from "@/lib/chip_resolver";
+import { tokeniseLine, getIndex, resolveEntry, splitOnCriticalSpans } from "@/lib/chip_resolver";
 import type { ISLDictionaryEntry, Simplification } from "@/lib/types";
 
 interface Props {
@@ -81,12 +81,6 @@ export function SimplifiedText({ simplification, dictionary, activeChip = null }
  * plain text (further split by ISL term matches).
  */
 
-interface CriticalSegment { kind: "critical"; html: string }
-interface TextSegment { kind: "text"; text: string }
-type Segment = CriticalSegment | TextSegment;
-
-const CRITICAL_SPAN_RE = /<span class="critical-field"[\s\S]*?<\/span>/g;
-
 interface RenderContext {
   dictionary: ISLDictionaryEntry[];
   sectionIndex: number;
@@ -112,21 +106,6 @@ function renderBody(body: string, ctx: RenderContext): React.ReactNode {
       )}
     </>
   );
-}
-
-function splitOnCriticalSpans(body: string): Segment[] {
-  const segments: Segment[] = [];
-  let lastIndex = 0;
-  for (const match of body.matchAll(CRITICAL_SPAN_RE)) {
-    const idx = match.index ?? 0;
-    if (idx > lastIndex) segments.push({ kind: "text", text: body.slice(lastIndex, idx) });
-    segments.push({ kind: "critical", html: match[0] });
-    lastIndex = idx + match[0].length;
-  }
-  if (lastIndex < body.length) {
-    segments.push({ kind: "text", text: body.slice(lastIndex) });
-  }
-  return segments;
 }
 
 /**

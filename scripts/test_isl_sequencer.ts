@@ -123,6 +123,30 @@ function emptyDictionaryTest(): void {
   ok("empty dictionary → empty sequence");
 }
 
+function ignoresCriticalFieldHtmlTest(): void {
+  // Regression: the sequencer used to walk raw body HTML, which made it count
+  // "span", "class", "critical-field", "Aspirin", etc. as word tokens — each
+  // incrementing tokenIndex. The renderer (SimplifiedText) splits out those
+  // spans first and never tokenises them, so the indices diverged. After the
+  // fix, both call splitOnCriticalSpans first.
+  const body =
+    'Take <span class="critical-field" data-id="c1">Aspirin 75 mg</span> daily then see the doctor';
+  const seq = buildSequence(s([{ heading: "h", body }]), FAKE_DICT);
+  if (seq.length !== 1) {
+    fail(`expected 1 chip ("doctor"), got ${seq.length}`);
+  }
+  if (seq[0].entry.term !== "Doctor") {
+    fail(`expected Doctor, got ${seq[0].entry.term}`);
+  }
+  // The body has 4 plain-text word tokens before "doctor" ("Take", "daily",
+  // "then", "see", "the") — no, that's 5. The chip "doctor" is at tokenIndex
+  // 5 (zero-indexed). Confirm.
+  if (seq[0].tokenIndex !== 5) {
+    fail(`expected tokenIndex 5 for "doctor" after the critical-span body, got ${seq[0].tokenIndex}`);
+  }
+  ok("critical-field HTML is skipped during sequencing");
+}
+
 function main(): void {
   emptyBodyTest();
   noChipMatchesTest();
@@ -131,6 +155,7 @@ function main(): void {
   documentOrderTest();
   devanagariTest();
   multilineBodyTest();
+  ignoresCriticalFieldHtmlTest();
   emptyDictionaryTest();
   console.log("\n✓ isl_sequencer tests passed");
 }
