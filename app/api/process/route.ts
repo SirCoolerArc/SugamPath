@@ -8,8 +8,13 @@ import {
   SimplificationFailedError,
 } from "@/lib/renderers";
 import { reconstructExtraction } from "@/lib/extractor";
+import {
+  judgeFaithfulness,
+  buildSimplifyRetryGuidance,
+  FaithfulnessJudgeError,
+} from "@/lib/faithfulness";
 import { GeminiRecitationError, type GeminiImage } from "@/lib/gemini_client";
-import type { ProcessResponse } from "@/lib/types";
+import type { FaithfulnessResult, ProcessResponse } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -132,7 +137,61 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const { simplification: rawSimplification, warnings: simplificationWarnings } = simplifyResult;
+  let { simplification: rawSimplification } = simplifyResult;
+  const { warnings: simplificationWarnings } = simplifyResult;
+
+  // ─── Stage 2.5: faithfulness judge ──────────────────────────────────────
+  // Second LLM call audits the simplifier's output against the extraction's
+  // critical_fields. If it flags omissions or fabrications, re-run the
+  // simplifier once with the judge's findings as guidance, then re-judge.
+  // The judge sees only redacted (PII-tokenised) data — no PII leaves the box.
+  let faithfulness: FaithfulnessResult | null = null;
+  const faithfulnessWarnings: string[] = [];
+  try {
+    const firstVerdict = await judgeFaithfulness({
+      redactedCriticalFields: redactedExtraction.critical_fields,
+      rawSimplification,
+    });
+
+    if (firstVerdict.verdict !== "VERIFIED" && firstVerdict.differences.length > 0) {
+      try {
+        const retryResult = await simplify({
+          redactedExtraction,
+          extraGuidance: buildSimplifyRetryGuidance(firstVerdict),
+        });
+        rawSimplification = retryResult.simplification;
+        const secondVerdict = await judgeFaithfulness({
+          redactedCriticalFields: redactedExtraction.critical_fields,
+          rawSimplification,
+        });
+        faithfulness = secondVerdict;
+        if (retryResult.attempts > 1) {
+          faithfulnessWarnings.push(
+            `Simplifier retried after faithfulness audit (initial verdict: ${firstVerdict.verdict}; final: ${secondVerdict.verdict}).`,
+          );
+        }
+      } catch {
+        // Simplifier retry failed — keep the first simplification + first verdict.
+        faithfulness = firstVerdict;
+      }
+    } else {
+      faithfulness = firstVerdict;
+    }
+  } catch (err) {
+    // Judge call itself failed. Fail-open: keep the simplification, mark the
+    // faithfulness as unverified-by-tooling. The original is always shown
+    // alongside, so the user has the source of truth either way.
+    faithfulness = null;
+    if (err instanceof FaithfulnessJudgeError) {
+      faithfulnessWarnings.push(
+        `Faithfulness judge errored after retries; surfacing simplification without audit.`,
+      );
+    } else {
+      faithfulnessWarnings.push(
+        `Faithfulness judge unavailable (${errMessage(err)}); surfacing simplification without audit.`,
+      );
+    }
+  }
 
   // ─── Stage 3: render ────────────────────────────────────────────────────
   // 1. Substitute {{cN}} placeholders with verbatim critical-field HTML spans
@@ -162,7 +221,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     redactedExtraction,
     simplification: finalSimplification,
     vaultSize: vault.size,
-    warnings: [...extractionWarnings, ...simplificationWarnings],
+    warnings: [...extractionWarnings, ...simplificationWarnings, ...faithfulnessWarnings],
+    faithfulness,
     meta: {
       totalLatencyMs,
       pages: images.length,

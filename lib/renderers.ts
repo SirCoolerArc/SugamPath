@@ -16,6 +16,9 @@ export interface SimplifyInput {
   /** The REDACTED extraction (PII tokens, no real names/IDs). The simplifier
    *  must only ever see this form. */
   redactedExtraction: Extraction;
+  /** Optional extra guidance appended to the prompt — used by the faithfulness
+   *  retry loop to feed back judge findings ("you omitted c5; reference it"). */
+  extraGuidance?: string;
 }
 
 export interface SimplifyResult {
@@ -56,7 +59,13 @@ export async function simplify(input: SimplifyInput): Promise<SimplifyResult> {
   let lastRawExcerpt = "";
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const prompt = buildPrompt(basePrompt, input.redactedExtraction, lastErrors, attempt);
+    const prompt = buildPrompt(
+      basePrompt,
+      input.redactedExtraction,
+      lastErrors,
+      attempt,
+      input.extraGuidance,
+    );
 
     const raw = await callGemini(prompt);
 
@@ -173,6 +182,7 @@ function buildPrompt(
   redactedExtraction: Extraction,
   lastErrors: string[],
   attempt: number,
+  extraGuidance?: string,
 ): string {
   const inputSection = `\n\n---\n\n## Input extraction\n\n\`\`\`json\n${JSON.stringify(redactedExtraction, null, 2)}\n\`\`\`\n`;
 
@@ -183,7 +193,11 @@ function buildPrompt(
           .map((e) => `- ${e}`)
           .join("\n")}\n\nRe-emit the JSON object correcting these issues. Output the JSON object and nothing else — no Markdown fences, no commentary.\n`;
 
-  return base + inputSection + retrySection;
+  const extraSection = extraGuidance
+    ? `\n\n---\n\n## Additional guidance\n\n${extraGuidance}\n`
+    : "";
+
+  return base + inputSection + retrySection + extraSection;
 }
 
 /**

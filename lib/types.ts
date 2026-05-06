@@ -169,6 +169,36 @@ export const SimplificationSchema = z.object({
 });
 export type Simplification = z.infer<typeof SimplificationSchema>;
 
+// ─── Faithfulness check (Stage 1 #14) ────────────────────────────────────────
+// Output of the LLM-as-judge audit that compares the post-substitution
+// simplified text against the extraction's critical_fields. See
+// `prompts/faithfulness.md` and `lib/faithfulness.ts`.
+export const FAITHFULNESS_VERDICTS = [
+  "VERIFIED",
+  "VERIFIED_WITH_OMISSIONS",
+  "UNVERIFIED",
+] as const;
+export type FaithfulnessVerdict = (typeof FAITHFULNESS_VERDICTS)[number];
+
+export const FAITHFULNESS_DIFFERENCE_KINDS = ["OMITTED", "FABRICATED"] as const;
+
+export const FaithfulnessDifferenceSchema = z.object({
+  kind: z.enum(FAITHFULNESS_DIFFERENCE_KINDS),
+  field_id: z.string().regex(/^c\d+$/).optional(),
+  verbatim: z.string().optional(),
+  fragment: z.string().optional(),
+  note: z.string().min(1),
+});
+export type FaithfulnessDifference = z.infer<typeof FaithfulnessDifferenceSchema>;
+
+export const FaithfulnessResultSchema = z.object({
+  verdict: z.enum(FAITHFULNESS_VERDICTS),
+  differences: z.array(FaithfulnessDifferenceSchema).default([]),
+  critical_fields_in_original: z.array(z.string().regex(/^c\d+$/)).default([]),
+  critical_fields_in_simplified: z.array(z.string().regex(/^c\d+$/)).default([]),
+});
+export type FaithfulnessResult = z.infer<typeof FaithfulnessResultSchema>;
+
 // ─── ISL dictionary entry (data/isl_dictionary.json) ────────────────────────
 export interface ISLDictionaryEntry {
   /** Canonical English term as it should appear in the simplified text. */
@@ -191,4 +221,5 @@ export interface ProcessResponse {
   simplification: Simplification;    // PII reconstructed; {{cN}} substituted to HTML spans
   vaultSize: number;                 // for the "PII vaulted" badge
   warnings: string[];                // any non-fatal extraction notes
+  faithfulness: FaithfulnessResult | null; // null only if the judge call itself errored
 }

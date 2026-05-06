@@ -5,7 +5,7 @@ import { useCallback, useState } from "react";
 import { DocumentUploader } from "@/components/DocumentUploader";
 import { ProcessingStage } from "@/components/ProcessingStage";
 import { SideBySideViewer } from "@/components/SideBySideViewer";
-import type { Extraction, Simplification } from "@/lib/types";
+import type { Extraction, FaithfulnessResult, Simplification } from "@/lib/types";
 
 interface ProcessSuccess {
   extraction: Extraction;
@@ -13,6 +13,7 @@ interface ProcessSuccess {
   simplification: Simplification;
   vaultSize: number;
   warnings: string[];
+  faithfulness: FaithfulnessResult | null;
   meta: { totalLatencyMs: number; pages: number };
 }
 
@@ -89,6 +90,7 @@ export default function Home() {
           extraction={stage.data.extraction}
           simplification={stage.data.simplification}
           vaultSize={stage.data.vaultSize}
+          faithfulness={stage.data.faithfulness}
           meta={stage.data.meta}
         />
       )}

@@ -5,13 +5,14 @@ import { SimplifiedText } from "@/components/SimplifiedText";
 import { ActionItemsPanel } from "@/components/ActionItemsPanel";
 import { SafetyBadges } from "@/components/SafetyBadges";
 import { AudioPlayer } from "@/components/AudioPlayer";
-import type { Extraction, Simplification } from "@/lib/types";
+import type { Extraction, FaithfulnessResult, Simplification } from "@/lib/types";
 
 interface Props {
   previews: string[];
   extraction: Extraction;
   simplification: Simplification;
   vaultSize: number;
+  faithfulness: FaithfulnessResult | null;
   meta: { totalLatencyMs: number; pages: number };
 }
 
@@ -20,6 +21,7 @@ export function SideBySideViewer({
   extraction,
   simplification,
   vaultSize,
+  faithfulness,
   meta,
 }: Props) {
   return (
@@ -39,6 +41,7 @@ export function SideBySideViewer({
           vaultSize={vaultSize}
           pages={meta.pages}
           latencyMs={meta.totalLatencyMs}
+          faithfulness={faithfulness}
         />
       </div>
 
