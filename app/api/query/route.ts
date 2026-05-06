@@ -24,7 +24,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const fileEntries = form.getAll("document").filter((v): v is File => v instanceof File);
+  const fileEntries = form.getAll("document").filter(
+    (v): v is File => typeof v === "object" && v !== null && typeof (v as Blob).arrayBuffer === "function" && "name" in v,
+  );
   if (fileEntries.length === 0) {
     return NextResponse.json(
       { error: "No 'document' file in form data." },
