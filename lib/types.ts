@@ -253,11 +253,15 @@ export interface ISLDictionaryEntry {
   term: string;
   /** Optional inflections / synonyms that should also resolve to this entry. */
   aliases?: string[];
-  /** Direct URL to the sign video, OR a link to the ISLRTC page for the term
-   *  if the video itself isn't legally hostable. The ISL chip will use a
-   *  <video> if the URL ends in a recognised extension; otherwise it will
-   *  open the URL in a new tab. */
+  /** URL the ISL chip's <video> element points at. After the dictionary route
+   *  rewrites it, this will be `/api/isl-video/<fileId>` — our streaming
+   *  proxy that serves Drive bytes through our origin so inline playback
+   *  works without exposing the Drive API key. */
   videoUrl: string;
+  /** Drive's public viewer URL (`drive.google.com/file/d/<id>/view`). Used as
+   *  the chip popover's "Open on Drive ↗" footer link, and as the fallback
+   *  when the proxy fails. Optional for back-compat with older entries. */
+  videoFallbackUrl?: string;
   /** Optional short caption shown beside the video. */
   caption?: string;
 }
@@ -272,4 +276,17 @@ export interface ProcessResponse {
   warnings: string[];                // any non-fatal extraction notes
   faithfulness: FaithfulnessResult | null; // null only if the judge call itself errored
   injection: InjectionCheckResult | null;  // null only if the detector call itself errored
+}
+
+// ─── ISL play-all sequence (post-Stage-2 follow-up) ──────────────────────────
+// One playable item in a sequenced walk over the simplified text. The
+// sequencer (lib/isl_sequencer.ts) produces these in document order; the
+// floating player consumes them one at a time via <video src=entry.videoUrl>.
+// `sectionIndex` and `tokenIndex` jointly identify the rendered chip so
+// SimplifiedText can highlight it as "currently signing".
+export interface ISLSequenceItem {
+  entry: ISLDictionaryEntry;
+  sectionIndex: number; // index into Simplification.sections
+  tokenIndex: number;   // ordinal of the chipped word within that section's body
+  surface: string;      // the surface form ("Doctor" or "डॉक्टर") that resolved to this entry
 }
