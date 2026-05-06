@@ -22,7 +22,7 @@ The product's most demanding commitment is that the bridge cannot lie. Every saf
 
 A user can:
 
-1. **Upload** any document (image or PDF, up to 10 MB total) by drag-drop or file picker.
+1. **Upload** any document (image or PDF, up to 10 MB total) by drag-drop or file picker. **Optionally type or speak a specific question** at this stage — the Web Speech API captures voice in English, Hindi, or code-mixed; the system returns a focused answer drawn only from the document, in the same language the question was asked. This is for users who want to know one specific thing — *"when is my next visit?"*, *"क्या मुझे कोई जांच करवानी है?"* — without reading the whole simplification.
 2. **Watch the safety pipeline narrate itself** as it runs (~40 seconds): "Reading your document with care", "Finding the personal details on the page", "Hiding them safely while we work", "Keeping every important detail exact", and so on. The narration is the demo's ethics moment — the user (and the judge) sees what the system is doing.
 3. **See a side-by-side view**: the original document on the left, a simplified rendition on the right, with critical-field spans (turmeric underline) and inline ISL chips for any of 10,243 ISLRTC terms.
 4. **Switch the reading form** — paragraphs / shorter sentences / each fact on its own line. Toggling regenerates the simplification (~22 s); previously-seen forms swap instantly from a client cache.
@@ -44,20 +44,24 @@ A user can:
 │  Browser (Next.js client, app/page.tsx state machine)           │
 │  idle → processing → result → error                             │
 │  Per-(level, language) cache; vault round-trip; no logs         │
-└────────────────────┬───────────────────────┬────────────────────┘
-                     │                       │
-       POST /api/process (multipart)     POST /api/resimplify (JSON)
-                     │                       │
-                     ▼                       ▼
-       ┌──────────────────────────┐ ┌──────────────────────────┐
-       │  app/api/process         │ │  app/api/resimplify      │
-       │  vision → tokenise →     │ │  simplify(level, lang) → │
-       │  (simplify ∥ injection)  │ │  faithfulness → render   │
-       │  → faithfulness → render │ │  ~22s per toggle         │
-       └────────────┬─────────────┘ └────────────┬─────────────┘
-                    │                            │
-                    └─────────────┬──────────────┘
-                                  ▼
+│  Optional voice query at upload via Web Speech API              │
+└─────────────┬─────────────────────┬────────────────┬────────────┘
+              │                     │                │
+   POST /api/process       POST /api/resimplify   POST /api/query
+   (multipart)             (JSON)                 (multipart + question)
+              │                     │                │
+              ▼                     ▼                ▼
+   ┌─────────────────────┐ ┌──────────────────┐ ┌───────────────────┐
+   │  app/api/process    │ │ app/api/         │ │ app/api/query     │
+   │  vision → tokenise  │ │   resimplify     │ │  vision →         │
+   │  → (simplify ∥      │ │  simplify(level, │ │  one-shot answer  │
+   │    injection) →     │ │    lang) →       │ │  refuses advice;  │
+   │  faithfulness →     │ │  faithfulness    │ │  answers in the   │
+   │  render             │ │  → render        │ │  asker's language │
+   └──────────┬──────────┘ └────────┬─────────┘ └─────────┬─────────┘
+              │                     │                     │
+              └─────────────────────┼─────────────────────┘
+                                    ▼
               ┌─────────────────────────────────────────────┐
               │  Gemini 2.5 Flash (lib/gemini_client.ts)    │
               │  vision · structured JSON · multilingual    │
@@ -264,6 +268,7 @@ There is no test framework dependency. Each script asserts via `process.exit(1)`
 | `PRESENTATION.md` | Slide-by-slide content for the live demo. |
 | `app/api/process/route.ts` | Main pipeline: vision → tokenise → simplify ∥ inject → faithfulness → render |
 | `app/api/resimplify/route.ts` | Slider/language toggle endpoint |
+| `app/api/query/route.ts` | Question-answering endpoint — vision → one-shot answer, refuses advice, answers in asker's language |
 | `app/api/isl-dictionary/route.ts` | GET — rewrites Drive URLs to our proxy |
 | `app/api/isl-video/[fileId]/route.ts` | Drive-streaming proxy for inline video playback |
 | `lib/gemini_client.ts` | Sole point of contact with Gemini SDK |
@@ -281,10 +286,12 @@ There is no test framework dependency. Each script asserts via `process.exit(1)`
 | `prompts/simplify.md` | Easy-text generation; `{{cN}}` placeholders; level + language guidance appended at runtime |
 | `prompts/faithfulness.md` | Three-verdict judge; language-aware |
 | `prompts/injection_check.md` | Adversarial-content detector |
+| `prompts/query.md` | Question-answering prompt; answer only from the document, refuse advice |
 | `components/SideBySideViewer.tsx` | Asymmetric 5/7 layout; hosts both sliders, audio, play-all, floating player |
 | `components/SimplifiedText.tsx` | Section renderer; per-chip ref registry; `activeChip` highlight + auto-scroll |
 | `components/ISLTermChip.tsx` | Chip popover with inline `<video>` |
 | `components/ISLPlayAllButton.tsx`, `ISLPlayAllPlayer.tsx` | Toolbar button + floating bottom-right player |
+| `components/VoiceQueryInput.tsx` | Text + voice input on the upload screen; Web Speech API for dictation in en / hi / code-mixed |
 | `scripts/sync_isl_dictionary.ts` | Walks the ISLRTC Drive archive |
 | `scripts/test_*.ts` | Hand-run test harnesses |
 | `docs/superpowers/specs/`, `docs/superpowers/plans/` | Design specs and implementation plans (audit trail) |
@@ -310,8 +317,8 @@ These are non-negotiable. Every code review during the build was held against th
 - **PDF originals are rendered in an iframe.** This means click-to-highlight cross-references between simplified spans and source spans is bounded to "scroll to the page" rather than visual span-level highlight. Image documents have full DOM access; sub-paragraph highlight is achievable for those in a future iteration.
 - **Hindi ISL coverage is limited.** Our hand-curated alias map has ~30 Hindi → English entries. A play-all run on a Hindi document produces a sparser sequence than English. Surfaced honestly via the inline tip below the play-all button. Future work: expand the alias map to ~100+ entries OR (heavier) Gemini-driven sequence enrichment for Hindi mode.
 - **The faithfulness judge can return VERIFIED_WITH_OMISSIONS** on real documents — typically 4-7 omitted fields, mostly UHIDs and bookkeeping dates the simplifier reasonably skipped. This is surfaced as a quiet count on the safety badge, not as a red banner. The retry-with-guidance pass reduces this somewhat.
-- **No voice input.** The product accepts text input only (the user-prompt feature is itself deferred — see `PROGRESS.md`).
 - **No ISL captions** in the play-all video player. The sign clips themselves are silent; the chip term is shown in the player's header strip.
+- **Voice query depends on the browser's Web Speech API.** Chrome / Edge support it well in en-IN and hi-IN; Firefox does not. The input falls back to text-only on unsupported browsers.
 
 ---
 

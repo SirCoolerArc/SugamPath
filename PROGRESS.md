@@ -8,14 +8,15 @@
 
 - **Stage 0 — complete and tagged.** All 13 items of `CLAUDE.md` §8 shipped. Tag: `stage-0-complete` (commit `64e6945`).
 - **Stage 1 — complete.** 4 of 6 items shipped, 2 deliberately skipped with reasoning. (Tag pending; never blocked anything.)
-- **Stage 2 — partially shipped, with one item deliberately deferred.**
+- **Stage 2 — partially shipped, with one item rebuilt under different framing.**
   - **6.1 Hindi support — shipped.** Devanagari PII patterns, simplifier `target_language` parameter (en / hi / code-mixed), cross-language faithfulness judge, ISL chips for Devanagari surface forms via a hand-curated alias map, and a three-position language toggle UI.
   - **6.2 click-to-highlight — skipped by design** (PDF iframe targets cap the achievable visual fidelity; deferred to a future Stage 3).
   - **6.3 per-paragraph confidence dots — skipped** (low user-impact for the demo; the existing faithfulness badge already carries the trust story).
-  - **6.4 intent classifier + advice refusal — deferred by design.** A free-text follow-up box centres a literate user; SugamPath's primary user is deaf or low-literacy and composing a written question is exactly what the rest of the product removes the burden of doing. Spec preserved at [`docs/superpowers/specs/2026-05-06-intent-classifier-design.md`](docs/superpowers/specs/2026-05-06-intent-classifier-design.md) as a record of the design decision.
+  - **6.4 intent classifier + advice refusal — originally deferred, then rebuilt as voice + text query.** The original spec was deferred because a free-text follow-up *typed* input centres a literate user. A teammate then rebuilt it as a **voice + text query input** at upload time (`/api/query` + `VoiceQueryInput` + `prompts/query.md`), which addresses the audience concern: a deaf user doesn't need to type, a low-literacy adult can ask verbally via the Web Speech API. The prompt is constrained to answer only from the document, refuses advice ("should I take this?", "is this safe?"), and supports the same English / Hindi / code-mixed languages as the simplifier. Spec for the original deferred design preserved at [`docs/superpowers/specs/2026-05-06-intent-classifier-design.md`](docs/superpowers/specs/2026-05-06-intent-classifier-design.md) as a record.
 - **ISL Play-All — shipped (post-Stage-2 follow-up).** A "play all signs" button next to the audio player walks every ISL chip in the simplified text in document order. While playing, a floating bottom-right player shows the current sign clip; the corresponding word in the simplified text is highlighted with a soft navy tint and a left bar (readable while signing). Backed by a server-side proxy at `/api/isl-video/<fileId>` that streams Drive bytes through our origin, unblocking inline `<video>` playback (which had never worked before — chips used to open Drive in a new tab). This is the headline feature for "actually for a deaf primary user, not just a literate person."
+- **Vercel deployment live at [sugam-path.vercel.app](https://sugam-path.vercel.app/).** Auto-deploys from `main`. Fixed one production bug post-deploy: `voiceschanged` race in `AudioPlayer` was leaving the React voices state empty in production builds, so Hindi text was being read by the browser's default English voice. Resolved at click time instead of mount time (`720dab1`).
 
-**Latest commit on submission day:** `6f51c5c` on `main`, pushed to `https://github.com/SirCoolerArc/SugamPath`.
+**Latest commit on submission day:** `67ed1ab` (merge of voice-query branch) on `main`, pushed to `https://github.com/SirCoolerArc/SugamPath`.
 
 ---
 
@@ -24,7 +25,7 @@
 A user can:
 
 1. Open `http://localhost:3000`, see an editorial landing page with the one-line pitch and three "promise" cards.
-2. Drag-drop or click to upload one or more page images / a PDF (cap: 10 MB total). PDFs preview natively in a browser iframe; images render via `next/image`.
+2. Drag-drop or click to upload one or more page images / a PDF (cap: 10 MB total). PDFs preview natively in a browser iframe; images render via `next/image`. **Optionally type or speak a specific question about the document** at this stage — the Web Speech API captures voice in English, Hindi, or code-mixed; the `/api/query` endpoint returns a focused answer drawn only from the document, refuses advice, and answers in the question's language.
 3. Watch a typewritten *"we do this carefully, on purpose"* loading screen narrate the safety pipeline as it runs (~36 s of narration over a ~40 s pipeline, with a calm "still reading carefully" line if it crosses 50 s).
 4. See a side-by-side view: original document on the left, simplified plain-English text on the right, with critical-field spans (turmeric underline) and inline ISL chips for any of 10,243 ISLRTC terms.
 5. **Switch the reading form** — a three-position slider above the simplified column flips between *"Plain words, in short paragraphs"*, *"Shorter sentences. Easier to scan."*, and *"Each fact on its own line."* Each position now carries a static label so the affordance is self-documenting. Toggling re-simplifies via `/api/resimplify` (~22 s); previously-seen levels swap instantly from a client cache keyed by `${level}|${language}`.
@@ -184,7 +185,7 @@ into view via a per-chip ref registry.
 | 6.1.4 | Hindi ISL aliases + language toggle UI + UX polish | ✅ | `935cc17`, `11c094e` |
 | 6.2 | Click-to-highlight | ⏭️ skipped (PDF iframe limit) | — |
 | 6.3 | Per-paragraph confidence dots | ⏭️ skipped (low impact) | — |
-| 6.4 | Intent classifier + refusal | ⏭️ deferred by design (audience misalignment) | spec at `6ca0fd9` |
+| 6.4 | Voice + text query at upload (rebuilt from the deferred intent classifier) | ✅ | `a44a6e1`, `7cd7740`, `2ad06d9`, `578f0f1`, merged via `67ed1ab` |
 
 ### ISL Play-All (post-Stage-2 follow-up)
 
@@ -285,8 +286,10 @@ The user has auto-memory at `C:\Users\Rishabh Kumar\.claude\projects\c--Users-Ri
 | `prompts/simplify.md` | `{{cN}}` placeholders; PII tokens flow through; no advice. Form + language constraints appended at runtime |
 | `prompts/faithfulness.md` | Three-verdict judge; language-aware so Hindi/Devanagari paraphrases of durations are not fabrications |
 | `prompts/injection_check.md` | Adversarial-content detector |
+| `prompts/query.md` | Question-answering prompt; answer only from the document, refuse advice, output in the asker's language |
 | `app/api/process/route.ts` | Single multipart POST: extract → (simplify ∥ inject) → faithfulness → render → respond |
 | `app/api/resimplify/route.ts` | JSON POST for slider/language toggles; ~22 s per call |
+| `app/api/query/route.ts` | Multipart POST: extract → answer one focused question against the document. Refuses advice; answers in the asker's language |
 | `app/api/isl-dictionary/route.ts` | GET — converts Drive API media URLs to our proxy URLs at request time |
 | `app/api/isl-video/[fileId]/route.ts` | Drive-streaming proxy; key stays server-only; CORS sidestepped |
 | `app/page.tsx` | State machine: idle → processing → result → error. Cache keyed by `(level, language)` |
@@ -300,6 +303,7 @@ The user has auto-memory at `C:\Users\Rishabh Kumar\.claude\projects\c--Users-Ri
 | `components/SafetyBadges.tsx` | Vault count + page count + latency + faithfulness + injection (conditional) |
 | `components/InjectionNotice.tsx` | Top-of-page rust-accent banner; dismissible |
 | `components/ReadingFormSlider.tsx`, `LanguageToggle.tsx` | Three-position sliders with static labels |
+| `components/VoiceQueryInput.tsx` | Text + voice input on the upload screen; Web Speech API for dictation in en / hi / code-mixed |
 | `scripts/sync_isl_dictionary.ts` | Walks the ISLRTC Google Drive archive |
 | `scripts/test_*.ts` | Hand-run test harnesses (no test framework dep) |
 | `docs/superpowers/specs/` | Brainstorming specs (intent classifier deferred; play-all approved + shipped) |
