@@ -123,6 +123,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const firstVerdict = await judgeFaithfulness({
       redactedCriticalFields: redactedExtraction.critical_fields,
       rawSimplification,
+      language,
     });
     if (firstVerdict.verdict !== "VERIFIED" && firstVerdict.differences.length > 0) {
       try {
@@ -136,6 +137,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         const secondVerdict = await judgeFaithfulness({
           redactedCriticalFields: redactedExtraction.critical_fields,
           rawSimplification,
+          language,
         });
         faithfulness = secondVerdict;
       } catch {

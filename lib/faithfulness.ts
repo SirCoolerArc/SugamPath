@@ -4,10 +4,12 @@ import path from "node:path";
 import { callGemini } from "@/lib/gemini_client";
 import { applyCriticalFieldSubstitution } from "@/lib/renderers";
 import {
+  DEFAULT_TARGET_LANGUAGE,
   FaithfulnessResultSchema,
   type CriticalField,
   type FaithfulnessResult,
   type Simplification,
+  type TargetLanguage,
 } from "@/lib/types";
 
 const MAX_ATTEMPTS = 2;
@@ -21,6 +23,11 @@ export interface FaithfulnessInput {
    *  tokenised). The judge needs the post-substitution form, so we apply the
    *  substitution against the redacted critical_fields locally. */
   rawSimplification: Simplification;
+  /** The language the simplification was generated in. Threaded into the
+   *  judge prompt so it knows whether Hindi paraphrases of durations and
+   *  quantities should be treated as paraphrases or as fabrications.
+   *  Defaults to "en" for back-compat. */
+  language?: TargetLanguage;
 }
 
 export class FaithfulnessJudgeError extends Error {
@@ -63,6 +70,7 @@ export async function judgeFaithfulness(
       verbatim: c.verbatim,
     })),
     simplified_text: simplifiedText,
+    simplified_language: input.language ?? DEFAULT_TARGET_LANGUAGE,
   };
 
   const prompt = `${basePrompt}\n\n---\n\n## Input\n\n<extraction>\n${JSON.stringify(judgeInput, null, 2)}\n</extraction>\n`;
