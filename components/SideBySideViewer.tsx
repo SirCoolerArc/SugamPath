@@ -7,16 +7,19 @@ import { SafetyBadges } from "@/components/SafetyBadges";
 import { AudioPlayer } from "@/components/AudioPlayer";
 import { InjectionNotice } from "@/components/InjectionNotice";
 import { ReadingFormSlider } from "@/components/ReadingFormSlider";
+import { LanguageToggle } from "@/components/LanguageToggle";
 import type {
   Extraction,
   FaithfulnessResult,
   InjectionCheckResult,
   ReadingLevel,
   Simplification,
+  TargetLanguage,
 } from "@/lib/types";
 
 interface Props {
   previews: string[];
+  mimeTypes: string[];
   extraction: Extraction;
   simplification: Simplification;
   vaultSize: number;
@@ -25,12 +28,15 @@ interface Props {
   meta: { totalLatencyMs: number; pages: number };
   readingLevel: ReadingLevel;
   onReadingLevelChange: (level: ReadingLevel) => void;
+  language: TargetLanguage;
+  onLanguageChange: (language: TargetLanguage) => void;
   regenerating: boolean;
   regenerationError: string | null;
 }
 
 export function SideBySideViewer({
   previews,
+  mimeTypes,
   extraction,
   simplification,
   vaultSize,
@@ -39,6 +45,8 @@ export function SideBySideViewer({
   meta,
   readingLevel,
   onReadingLevelChange,
+  language,
+  onLanguageChange,
   regenerating,
   regenerationError,
 }: Props) {
@@ -74,17 +82,24 @@ export function SideBySideViewer({
       <div className="max-w-7xl mx-auto grid lg:grid-cols-12 gap-10 lg:gap-16">
         <aside className="lg:col-span-5 lg:sticky lg:top-8 self-start fade-up fade-up-delay-1">
           <p className="mono-label mb-4">— the original</p>
-          <OriginalDocument previews={previews} />
+          <OriginalDocument previews={previews} mimeTypes={mimeTypes} />
         </aside>
 
         <article className="lg:col-span-7 fade-up fade-up-delay-2">
-          <div className="flex items-start justify-between gap-6 mb-6">
-            <ReadingFormSlider
-              value={readingLevel}
-              onChange={onReadingLevelChange}
-              busy={regenerating}
-            />
-            <AudioPlayer simplification={simplification} />
+          <div className="flex items-start justify-between gap-6 mb-6 flex-wrap">
+            <div className="flex items-start gap-10 flex-wrap">
+              <ReadingFormSlider
+                value={readingLevel}
+                onChange={onReadingLevelChange}
+                busy={regenerating}
+              />
+              <LanguageToggle
+                value={language}
+                onChange={onLanguageChange}
+                busy={regenerating}
+              />
+            </div>
+            <AudioPlayer simplification={simplification} language={language} />
           </div>
 
           {regenerationError && (

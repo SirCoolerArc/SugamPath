@@ -7,12 +7,22 @@ import { ProcessingStage } from "@/components/ProcessingStage";
 import { SideBySideViewer } from "@/components/SideBySideViewer";
 import {
   DEFAULT_READING_LEVEL,
+  DEFAULT_TARGET_LANGUAGE,
   type Extraction,
   type FaithfulnessResult,
   type InjectionCheckResult,
   type ReadingLevel,
   type Simplification,
+  type TargetLanguage,
 } from "@/lib/types";
+
+/** Compose a cache key from the (level, language) pair. Both controls live on
+ *  the same regenerate flow, so we cache by the combined choice — switching
+ *  between (paragraphs, en) and (paragraphs, hi) is a real cache miss; flicking
+ *  back is a hit. */
+function cacheKeyOf(level: ReadingLevel, language: TargetLanguage): string {
+  return `${level}|${language}`;
+}
 
 interface ProcessSuccess {
   extraction: Extraction;
@@ -50,7 +60,8 @@ type Stage =
       previews: string[];
       files: File[];
       readingLevel: ReadingLevel;
-      cache: Partial<Record<ReadingLevel, CachedLevelResult>>;
+      language: TargetLanguage;
+      cache: Record<string, CachedLevelResult>; // keyed by `${level}|${language}`
       regenerating: boolean;
       regenerationError: string | null;
     }
@@ -97,9 +108,10 @@ export default function Home() {
         previews,
         files,
         readingLevel: DEFAULT_READING_LEVEL,
+        language: DEFAULT_TARGET_LANGUAGE,
         // Seed the cache with the initial-load result so flicking back is free.
         cache: {
-          [DEFAULT_READING_LEVEL]: {
+          [cacheKeyOf(DEFAULT_READING_LEVEL, DEFAULT_TARGET_LANGUAGE)]: {
             simplification: data.simplification,
             faithfulness: data.faithfulness,
           },
@@ -126,20 +138,23 @@ export default function Home() {
     void handleSubmit(stage.files, stage.previews);
   }, [stage, handleSubmit]);
 
-  const handleLevelChange = useCallback(
-    async (next: ReadingLevel) => {
+  const regenerate = useCallback(
+    async (nextLevel: ReadingLevel, nextLanguage: TargetLanguage) => {
       if (stage.kind !== "result") return;
       if (stage.regenerating) return;
-      if (next === stage.readingLevel) return;
+      if (nextLevel === stage.readingLevel && nextLanguage === stage.language) return;
+
+      const key = cacheKeyOf(nextLevel, nextLanguage);
 
       // Cache hit — swap instantly without any network.
-      const cached = stage.cache[next];
+      const cached = stage.cache[key];
       if (cached) {
         setStage((s) =>
           s.kind === "result"
             ? {
                 ...s,
-                readingLevel: next,
+                readingLevel: nextLevel,
+                language: nextLanguage,
                 regenerationError: null,
                 data: {
                   ...s.data,
@@ -166,7 +181,8 @@ export default function Home() {
             redactedExtraction: stage.data.redactedExtraction,
             extraction: stage.data.extraction,
             vault: stage.data.vault,
-            level: next,
+            level: nextLevel,
+            language: nextLanguage,
           }),
         });
         const text = await res.text();
@@ -187,7 +203,7 @@ export default function Home() {
               ? {
                   ...s,
                   regenerating: false,
-                  regenerationError: regenerationErrorMessage(res.status, body.error, next),
+                  regenerationError: regenerationErrorMessage(res.status, body.error),
                 }
               : s,
           );
@@ -202,10 +218,11 @@ export default function Home() {
           s.kind === "result"
             ? {
                 ...s,
-                readingLevel: next,
+                readingLevel: nextLevel,
+                language: nextLanguage,
                 regenerating: false,
                 regenerationError: null,
-                cache: { ...s.cache, [next]: newCacheEntry },
+                cache: { ...s.cache, [key]: newCacheEntry },
                 data: {
                   ...s.data,
                   simplification: newCacheEntry.simplification,
@@ -229,6 +246,22 @@ export default function Home() {
     [stage],
   );
 
+  const handleLevelChange = useCallback(
+    (next: ReadingLevel) => {
+      if (stage.kind !== "result") return;
+      void regenerate(next, stage.language);
+    },
+    [stage, regenerate],
+  );
+
+  const handleLanguageChange = useCallback(
+    (next: TargetLanguage) => {
+      if (stage.kind !== "result") return;
+      void regenerate(stage.readingLevel, next);
+    },
+    [stage, regenerate],
+  );
+
   const reset = useCallback(() => {
     if (stage.kind !== "idle") {
       for (const url of stage.previews ?? []) URL.revokeObjectURL(url);
@@ -247,12 +280,17 @@ export default function Home() {
       )}
 
       {stage.kind === "processing" && (
-        <ProcessingStage previews={stage.previews} fileCount={stage.files.length} />
+        <ProcessingStage
+          previews={stage.previews}
+          mimeTypes={stage.files.map((f) => f.type)}
+          fileCount={stage.files.length}
+        />
       )}
 
       {stage.kind === "result" && (
         <SideBySideViewer
           previews={stage.previews}
+          mimeTypes={stage.files.map((f) => f.type)}
           extraction={stage.data.extraction}
           simplification={stage.data.simplification}
           vaultSize={stage.data.vaultSize}
@@ -261,6 +299,8 @@ export default function Home() {
           meta={stage.data.meta}
           readingLevel={stage.readingLevel}
           onReadingLevelChange={handleLevelChange}
+          language={stage.language}
+          onLanguageChange={handleLanguageChange}
           regenerating={stage.regenerating}
           regenerationError={stage.regenerationError}
         />
@@ -382,11 +422,9 @@ interface ErrorPresentation {
 function regenerationErrorMessage(
   status: number,
   serverError: string | undefined,
-  attemptedLevel: ReadingLevel,
 ): string {
   const _ = serverError; // kept for future tailored copy if specific 4xx shapes emerge
   void _;
-  void attemptedLevel;
   if (status === 502) {
     return "the model is busy; keeping the previous version";
   }
