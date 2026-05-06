@@ -1,22 +1,32 @@
 "use client";
 
 import { useState } from "react";
-import { Lock, FileText, Timer, ShieldCheck } from "lucide-react";
+import { Lock, FileText, Timer, ShieldCheck, AlertTriangle } from "lucide-react";
 
-import type { FaithfulnessResult } from "@/lib/types";
+import type { FaithfulnessResult, InjectionCheckResult } from "@/lib/types";
 
 interface Props {
   vaultSize: number;
   pages: number;
   latencyMs: number;
   faithfulness: FaithfulnessResult | null;
+  injection: InjectionCheckResult | null;
 }
 
-export function SafetyBadges({ vaultSize, pages, latencyMs, faithfulness }: Props) {
-  const [expanded, setExpanded] = useState(false);
+type ExpandedPanel = "faithfulness" | "injection" | null;
+
+export function SafetyBadges({
+  vaultSize,
+  pages,
+  latencyMs,
+  faithfulness,
+  injection,
+}: Props) {
+  const [expanded, setExpanded] = useState<ExpandedPanel>(null);
 
   const f = faithfulnessSummary(faithfulness);
-  const expandable = f.expandable;
+  const showInjectionBadge =
+    injection !== null && injection.verdict === "SUSPICIOUS" && injection.findings.length > 0;
 
   return (
     <div className="hidden sm:flex flex-col items-end gap-2">
@@ -42,13 +52,34 @@ export function SafetyBadges({ vaultSize, pages, latencyMs, faithfulness }: Prop
           icon={<ShieldCheck size={11} strokeWidth={2} />}
           value={f.value}
           label={f.label}
-          interactive={expandable}
-          onClick={expandable ? () => setExpanded((v) => !v) : undefined}
+          interactive={f.expandable}
+          onClick={
+            f.expandable
+              ? () => setExpanded((p) => (p === "faithfulness" ? null : "faithfulness"))
+              : undefined
+          }
         />
+        {showInjectionBadge && (
+          <Badge
+            icon={<AlertTriangle size={11} strokeWidth={2} />}
+            value={injection!.findings.length.toString().padStart(2, "0")}
+            label={
+              injection!.findings.length === 1
+                ? "unusual phrase flagged"
+                : "unusual phrases flagged"
+            }
+            rust
+            interactive
+            onClick={() => setExpanded((p) => (p === "injection" ? null : "injection"))}
+          />
+        )}
       </div>
 
-      {expanded && f.details && (
+      {expanded === "faithfulness" && f.details && (
         <FaithfulnessDetails details={f.details} />
+      )}
+      {expanded === "injection" && showInjectionBadge && (
+        <InjectionDetails injection={injection!} />
       )}
     </div>
   );
@@ -59,6 +90,7 @@ function Badge({
   value,
   label,
   accent = false,
+  rust = false,
   first = false,
   interactive = false,
   onClick,
@@ -67,18 +99,22 @@ function Badge({
   value: string;
   label: string;
   accent?: boolean;
+  rust?: boolean;
   first?: boolean;
   interactive?: boolean;
   onClick?: () => void;
 }) {
+  const valueColor = rust ? "var(--rust)" : accent ? "var(--navy)" : "var(--ink)";
+  const iconColor = rust ? "var(--rust)" : accent ? "var(--navy)" : "var(--ink-quiet)";
+
   const inner = (
     <>
-      <span style={{ color: accent ? "var(--navy)" : "var(--ink-quiet)" }}>{icon}</span>
+      <span style={{ color: iconColor }}>{icon}</span>
       <span
         className="mono"
         style={{
           fontSize: "var(--t-sm)",
-          color: accent ? "var(--navy)" : "var(--ink)",
+          color: valueColor,
           fontVariantNumeric: "tabular-nums",
         }}
       >
@@ -224,6 +260,48 @@ function FaithfulnessDetails({ details }: { details: FaithfulnessDetailsContent 
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+function InjectionDetails({ injection }: { injection: InjectionCheckResult }) {
+  return (
+    <div
+      className="border px-4 py-3 max-w-md"
+      style={{
+        borderColor: "var(--rust)",
+        background: "var(--paper-deep)",
+      }}
+    >
+      <p style={{ fontSize: "var(--t-xs)", color: "var(--ink-muted)", lineHeight: 1.5 }}>
+        These phrases in the document look directed at an automated reader rather than a human:
+      </p>
+      <ul className="mt-3 space-y-2.5">
+        {injection.findings.map((f, i) => (
+          <li
+            key={`${f.paragraph_id}-${i}`}
+            className="pl-3"
+            style={{ borderLeft: "2px solid var(--ink-faint)" }}
+          >
+            <p
+              className="mono-label mb-1"
+              style={{ color: "var(--ink-quiet)", fontSize: "10px" }}
+            >
+              {f.paragraph_id} · {f.pattern.replace(/_/g, " ")}
+            </p>
+            <p
+              style={{
+                fontSize: "var(--t-xs)",
+                color: "var(--ink-muted)",
+                lineHeight: 1.5,
+                fontStyle: "italic",
+              }}
+            >
+              “{f.excerpt}”
+            </p>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

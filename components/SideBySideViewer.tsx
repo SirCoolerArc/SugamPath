@@ -5,7 +5,13 @@ import { SimplifiedText } from "@/components/SimplifiedText";
 import { ActionItemsPanel } from "@/components/ActionItemsPanel";
 import { SafetyBadges } from "@/components/SafetyBadges";
 import { AudioPlayer } from "@/components/AudioPlayer";
-import type { Extraction, FaithfulnessResult, Simplification } from "@/lib/types";
+import { InjectionNotice } from "@/components/InjectionNotice";
+import type {
+  Extraction,
+  FaithfulnessResult,
+  InjectionCheckResult,
+  Simplification,
+} from "@/lib/types";
 
 interface Props {
   previews: string[];
@@ -13,6 +19,7 @@ interface Props {
   simplification: Simplification;
   vaultSize: number;
   faithfulness: FaithfulnessResult | null;
+  injection: InjectionCheckResult | null;
   meta: { totalLatencyMs: number; pages: number };
 }
 
@@ -22,10 +29,15 @@ export function SideBySideViewer({
   simplification,
   vaultSize,
   faithfulness,
+  injection,
   meta,
 }: Props) {
   return (
     <section className="px-6 lg:px-12 pt-8 pb-32">
+      {injection && injection.verdict === "SUSPICIOUS" && (
+        <InjectionNotice injection={injection} />
+      )}
+
       {/* Top strip: doc title + safety badges */}
       <div className="max-w-7xl mx-auto mb-10 flex items-end justify-between gap-6 fade-up">
         <div className="min-w-0">
@@ -42,6 +54,7 @@ export function SideBySideViewer({
           pages={meta.pages}
           latencyMs={meta.totalLatencyMs}
           faithfulness={faithfulness}
+          injection={injection}
         />
       </div>
 

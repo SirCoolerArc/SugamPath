@@ -199,6 +199,36 @@ export const FaithfulnessResultSchema = z.object({
 });
 export type FaithfulnessResult = z.infer<typeof FaithfulnessResultSchema>;
 
+// ─── Injection check (Stage 1 #15) ───────────────────────────────────────────
+// Output of the adversarial-content detector that scans extracted paragraphs
+// for text directed at an automated assistant (NOTE TO AI, "ignore previous
+// instructions", pre-approval claims, etc.). See `prompts/injection_check.md`
+// and `lib/injection_check.ts`.
+export const INJECTION_VERDICTS = ["CLEAN", "SUSPICIOUS"] as const;
+export type InjectionVerdict = (typeof INJECTION_VERDICTS)[number];
+
+export const INJECTION_PATTERNS = [
+  "direct_ai_instruction",
+  "pre_approval_claim",
+  "imperative_to_assistant",
+  "role_play_injection",
+  "prompt_leakage_attempt",
+  "other",
+] as const;
+
+export const InjectionFindingSchema = z.object({
+  paragraph_id: z.string().min(1),
+  pattern: z.string().min(1),
+  excerpt: z.string().min(1),
+});
+export type InjectionFinding = z.infer<typeof InjectionFindingSchema>;
+
+export const InjectionCheckResultSchema = z.object({
+  verdict: z.enum(INJECTION_VERDICTS),
+  findings: z.array(InjectionFindingSchema).default([]),
+});
+export type InjectionCheckResult = z.infer<typeof InjectionCheckResultSchema>;
+
 // ─── ISL dictionary entry (data/isl_dictionary.json) ────────────────────────
 export interface ISLDictionaryEntry {
   /** Canonical English term as it should appear in the simplified text. */
@@ -222,4 +252,5 @@ export interface ProcessResponse {
   vaultSize: number;                 // for the "PII vaulted" badge
   warnings: string[];                // any non-fatal extraction notes
   faithfulness: FaithfulnessResult | null; // null only if the judge call itself errored
+  injection: InjectionCheckResult | null;  // null only if the detector call itself errored
 }

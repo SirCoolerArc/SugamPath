@@ -13,8 +13,13 @@ import {
   buildSimplifyRetryGuidance,
   FaithfulnessJudgeError,
 } from "@/lib/faithfulness";
+import { checkForInjection, InjectionCheckError } from "@/lib/injection_check";
 import { GeminiRecitationError, type GeminiImage } from "@/lib/gemini_client";
-import type { FaithfulnessResult, ProcessResponse } from "@/lib/types";
+import type {
+  FaithfulnessResult,
+  InjectionCheckResult,
+  ProcessResponse,
+} from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -106,11 +111,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const { extraction, redactedExtraction, vault, warnings: extractionWarnings } = extractResult;
 
-  // ─── Stage 2: simplification ────────────────────────────────────────────
-  let simplifyResult;
-  try {
-    simplifyResult = await simplify({ redactedExtraction });
-  } catch (err) {
+  // ─── Stage 2: simplification + injection check (parallel) ──────────────
+  // Both consume only the redacted extraction; neither depends on the
+  // other's output. allSettled lets us treat their failures independently:
+  // simplifier failure is fatal (4xx/5xx), injection-check failure is
+  // fail-open (null result + warning).
+  const [simplifySettled, injectionSettled] = await Promise.allSettled([
+    simplify({ redactedExtraction }),
+    checkForInjection({ redactedExtraction }),
+  ]).then((r) => r) as [
+    PromiseSettledResult<Awaited<ReturnType<typeof simplify>>>,
+    PromiseSettledResult<InjectionCheckResult>,
+  ];
+
+  if (simplifySettled.status === "rejected") {
+    const err = simplifySettled.reason;
     if (err instanceof SimplificationFailedError) {
       return NextResponse.json(
         {
@@ -137,8 +152,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  let { simplification: rawSimplification } = simplifyResult;
-  const { warnings: simplificationWarnings } = simplifyResult;
+  let { simplification: rawSimplification } = simplifySettled.value;
+  const { warnings: simplificationWarnings } = simplifySettled.value;
+
+  let injection: InjectionCheckResult | null = null;
+  const injectionWarnings: string[] = [];
+  if (injectionSettled.status === "fulfilled") {
+    injection = injectionSettled.value;
+  } else {
+    const err = injectionSettled.reason;
+    if (err instanceof InjectionCheckError) {
+      injectionWarnings.push(
+        `Injection detector errored after retries; surfacing simplification without that check.`,
+      );
+    } else {
+      injectionWarnings.push(
+        `Injection detector unavailable (${errMessage(err)}); surfacing simplification without that check.`,
+      );
+    }
+  }
 
   // ─── Stage 2.5: faithfulness judge ──────────────────────────────────────
   // Second LLM call audits the simplifier's output against the extraction's
@@ -221,8 +253,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     redactedExtraction,
     simplification: finalSimplification,
     vaultSize: vault.size,
-    warnings: [...extractionWarnings, ...simplificationWarnings, ...faithfulnessWarnings],
+    warnings: [
+      ...extractionWarnings,
+      ...simplificationWarnings,
+      ...faithfulnessWarnings,
+      ...injectionWarnings,
+    ],
     faithfulness,
+    injection,
     meta: {
       totalLatencyMs,
       pages: images.length,
