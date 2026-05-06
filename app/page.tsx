@@ -55,16 +55,16 @@ type Stage =
   | { kind: "idle" }
   | { kind: "processing"; files: File[]; previews: string[] }
   | {
-      kind: "result";
-      data: ProcessSuccess;
-      previews: string[];
-      files: File[];
-      readingLevel: ReadingLevel;
-      language: TargetLanguage;
-      cache: Record<string, CachedLevelResult>; // keyed by `${level}|${language}`
-      regenerating: boolean;
-      regenerationError: string | null;
-    }
+    kind: "result";
+    data: ProcessSuccess;
+    previews: string[];
+    files: File[];
+    readingLevel: ReadingLevel;
+    language: TargetLanguage;
+    cache: Record<string, CachedLevelResult>; // keyed by `${level}|${language}`
+    regenerating: boolean;
+    regenerationError: string | null;
+  }
   | { kind: "error"; error: ProcessError; previews: string[]; files: File[] };
 
 export default function Home() {
@@ -152,16 +152,16 @@ export default function Home() {
         setStage((s) =>
           s.kind === "result"
             ? {
-                ...s,
-                readingLevel: nextLevel,
-                language: nextLanguage,
-                regenerationError: null,
-                data: {
-                  ...s.data,
-                  simplification: cached.simplification,
-                  faithfulness: cached.faithfulness,
-                },
-              }
+              ...s,
+              readingLevel: nextLevel,
+              language: nextLanguage,
+              regenerationError: null,
+              data: {
+                ...s.data,
+                simplification: cached.simplification,
+                faithfulness: cached.faithfulness,
+              },
+            }
             : s,
         );
         return;
@@ -201,10 +201,10 @@ export default function Home() {
           setStage((s) =>
             s.kind === "result"
               ? {
-                  ...s,
-                  regenerating: false,
-                  regenerationError: regenerationErrorMessage(res.status, body.error),
-                }
+                ...s,
+                regenerating: false,
+                regenerationError: regenerationErrorMessage(res.status, body.error),
+              }
               : s,
           );
           return;
@@ -217,28 +217,28 @@ export default function Home() {
         setStage((s) =>
           s.kind === "result"
             ? {
-                ...s,
-                readingLevel: nextLevel,
-                language: nextLanguage,
-                regenerating: false,
-                regenerationError: null,
-                cache: { ...s.cache, [key]: newCacheEntry },
-                data: {
-                  ...s.data,
-                  simplification: newCacheEntry.simplification,
-                  faithfulness: newCacheEntry.faithfulness,
-                },
-              }
+              ...s,
+              readingLevel: nextLevel,
+              language: nextLanguage,
+              regenerating: false,
+              regenerationError: null,
+              cache: { ...s.cache, [key]: newCacheEntry },
+              data: {
+                ...s.data,
+                simplification: newCacheEntry.simplification,
+                faithfulness: newCacheEntry.faithfulness,
+              },
+            }
             : s,
         );
       } catch (err) {
         setStage((s) =>
           s.kind === "result"
             ? {
-                ...s,
-                regenerating: false,
-                regenerationError: `couldn't switch form (${err instanceof Error ? err.message : "network error"}); keeping the previous version`,
-              }
+              ...s,
+              regenerating: false,
+              regenerationError: `couldn't switch form (${err instanceof Error ? err.message : "network error"}); keeping the previous version`,
+            }
             : s,
         );
       }
@@ -359,7 +359,7 @@ function Landing({ children }: { children: React.ReactNode }) {
             className="max-w-prose"
             style={{ fontSize: "var(--t-md)", color: "var(--ink-muted)", lineHeight: 1.6 }}
           >
-            Upload any document — a hospital discharge, a court summons, a benefits letter,
+            Upload any document, a hospital discharge, a court summons, a benefits letter,
             a property notice. SugamPath rewrites it in plain words, reads it aloud, and
             shows the key terms in Indian Sign Language. The original stays on the page.
             Personal information never leaves your browser unprotected.
@@ -377,8 +377,8 @@ function Landing({ children }: { children: React.ReactNode }) {
           always check what the original says.
         </Promise>
         <Promise title="Every important detail stays exact">
-          Names, numbers, dates, amounts, legal sections — anything the document
-          treats as load-bearing — pass through untouched. The simplified version
+          Names, numbers, dates, amounts, legal section, anything the document
+          treats as load-bearing, pass through untouched. The simplified version
           cannot accidentally change a word that matters.
         </Promise>
         <Promise title="Your information stays here">
