@@ -36,10 +36,11 @@ const STILL_WORKING_THRESHOLD_MS = 50_000;
 
 interface Props {
   previews: string[];
+  mimeTypes: string[];
   fileCount: number;
 }
 
-export function ProcessingStage({ previews, fileCount }: Props) {
+export function ProcessingStage({ previews, mimeTypes, fileCount }: Props) {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -58,18 +59,30 @@ export function ProcessingStage({ previews, fileCount }: Props) {
             className="space-y-3"
             style={{ filter: "grayscale(60%)", opacity: 0.55 }}
           >
-            {previews.map((src, i) => (
-              <div key={i} className="border" style={{ borderColor: "var(--ink-faint)" }}>
-                <Image
-                  src={src}
-                  alt={`Page ${i + 1}`}
-                  width={500}
-                  height={700}
-                  unoptimized
-                  className="w-full h-auto block"
-                />
-              </div>
-            ))}
+            {previews.map((src, i) => {
+              const isPdf = mimeTypes[i] === "application/pdf";
+              return (
+                <div key={i} className="border" style={{ borderColor: "var(--ink-faint)" }}>
+                  {isPdf ? (
+                    <iframe
+                      src={src}
+                      title={`Page ${i + 1}`}
+                      className="w-full block"
+                      style={{ height: "60vh", border: "none" }}
+                    />
+                  ) : (
+                    <Image
+                      src={src}
+                      alt={`Page ${i + 1}`}
+                      width={500}
+                      height={700}
+                      unoptimized
+                      className="w-full h-auto block"
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 

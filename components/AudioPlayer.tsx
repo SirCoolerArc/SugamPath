@@ -3,28 +3,38 @@
 import { useEffect, useRef, useState } from "react";
 import { Play, Pause, Square } from "lucide-react";
 
-import type { Simplification } from "@/lib/types";
+import type { Simplification, TargetLanguage } from "@/lib/types";
 
 interface Props {
   simplification: Simplification;
+  language: TargetLanguage;
 }
 
 type State = "idle" | "playing" | "paused";
 
-export function AudioPlayer({ simplification }: Props) {
+export function AudioPlayer({ simplification, language }: Props) {
   const [state, setState] = useState<State>("idle");
   const [supported, setSupported] = useState(true);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const utterRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!("speechSynthesis" in window)) {
       setSupported(false);
+      return;
     }
+    // Chrome on Windows populates the voice list asynchronously: the first
+    // `getVoices()` call before `voiceschanged` fires returns []. We listen for
+    // the event and cache the result so the click handler always has voices
+    // ready. Some browsers emit `voiceschanged` only after the list is ready;
+    // others have voices immediately. Cover both.
+    const refresh = () => setVoices(window.speechSynthesis.getVoices());
+    refresh();
+    window.speechSynthesis.addEventListener("voiceschanged", refresh);
     return () => {
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
+      window.speechSynthesis.removeEventListener("voiceschanged", refresh);
+      window.speechSynthesis.cancel();
     };
   }, []);
 
@@ -38,7 +48,13 @@ export function AudioPlayer({ simplification }: Props) {
     const utter = new SpeechSynthesisUtterance(text);
     utter.rate = 0.92;
     utter.pitch = 1;
-    utter.lang = "en-IN";
+    // Pick the BCP-47 locale that gives the broadest character coverage. For
+    // code-mixed output the Hindi voice handles Devanagari and at least
+    // attempts Latin tokens; the en-IN voice silently skips Devanagari runs,
+    // which is what was making Hindi pages "only read the underlined parts".
+    utter.lang = language === "en" ? "en-IN" : "hi-IN";
+    const preferredVoice = pickVoice(utter.lang, voices);
+    if (preferredVoice) utter.voice = preferredVoice;
     utter.onend = () => setState("idle");
     utter.onerror = () => setState("idle");
     utterRef.current = utter;
@@ -112,6 +128,21 @@ function ToolbarButton({
       {children}
     </button>
   );
+}
+
+/** Pick the best-matching installed voice for the requested locale. Browsers
+ *  ship different voice sets, so we fall back gracefully:
+ *    1. exact lang match (e.g. "hi-IN")
+ *    2. language-only match (e.g. any "hi-*")
+ *    3. null — let the browser pick its default for that lang
+ */
+function pickVoice(lang: string, voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  if (voices.length === 0) return null;
+  const exact = voices.find((v) => v.lang.toLowerCase() === lang.toLowerCase());
+  if (exact) return exact;
+  const prefix = lang.split("-")[0].toLowerCase();
+  const sameLang = voices.find((v) => v.lang.toLowerCase().startsWith(prefix));
+  return sameLang ?? null;
 }
 
 /* Strip HTML tags and join sections + actions + warnings into a single

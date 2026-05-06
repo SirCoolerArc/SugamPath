@@ -10,13 +10,14 @@ interface Props {
 
 interface Position {
   level: ReadingLevel;
+  label: string;
   description: string;
 }
 
 const POSITIONS: Position[] = [
-  { level: "paragraphs", description: "Plain words, in short paragraphs." },
-  { level: "shorter", description: "Shorter sentences. Easier to scan." },
-  { level: "list", description: "Each fact on its own line." },
+  { level: "paragraphs", label: "paragraphs", description: "Plain words, in short paragraphs." },
+  { level: "shorter", label: "short", description: "Shorter sentences. Easier to scan." },
+  { level: "list", label: "list", description: "Each fact on its own line." },
 ];
 
 export function ReadingFormSlider({ value, onChange, busy = false }: Props) {
@@ -30,8 +31,8 @@ export function ReadingFormSlider({ value, onChange, busy = false }: Props) {
       </p>
 
       <div
-        className="relative flex items-center"
-        style={{ width: "180px", height: "24px" }}
+        className="relative"
+        style={{ width: "220px", height: "44px" }}
         role="radiogroup"
         aria-label="Reading form"
       >
@@ -39,8 +40,7 @@ export function ReadingFormSlider({ value, onChange, busy = false }: Props) {
         <div
           className="absolute left-0 right-0"
           style={{
-            top: "50%",
-            transform: "translateY(-50%)",
+            top: "12px",
             height: "1px",
             background: "var(--ink-faint)",
           }}
@@ -58,13 +58,13 @@ export function ReadingFormSlider({ value, onChange, busy = false }: Props) {
               aria-checked={isActive}
               aria-label={p.description}
               disabled={busy}
-              className="absolute flex items-center justify-center transition-colors"
+              className="absolute flex flex-col items-center justify-start transition-colors"
               style={{
                 left: `${offsetPct}%`,
-                top: "50%",
-                transform: "translate(-50%, -50%)",
-                width: "20px",
-                height: "20px",
+                top: 0,
+                transform: "translateX(-50%)",
+                width: "60px",
+                height: "44px",
                 background: "transparent",
                 border: "none",
                 cursor: busy ? "wait" : "pointer",
@@ -73,6 +73,7 @@ export function ReadingFormSlider({ value, onChange, busy = false }: Props) {
             >
               <span
                 style={{
+                  marginTop: isActive ? "6px" : "8px",
                   width: isActive ? "12px" : "8px",
                   height: isActive ? "12px" : "8px",
                   borderRadius: "50%",
@@ -82,6 +83,18 @@ export function ReadingFormSlider({ value, onChange, busy = false }: Props) {
                   display: "block",
                 }}
               />
+              <span
+                className="mono-label"
+                style={{
+                  marginTop: "8px",
+                  fontSize: "10px",
+                  color: isActive ? "var(--navy)" : "var(--ink-quiet)",
+                  letterSpacing: "0.05em",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {p.label}
+              </span>
             </button>
           );
         })}
