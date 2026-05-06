@@ -186,12 +186,17 @@ function ChipWithRef({ label, entry, isActive, refKey, registry }: ChipWithRefPr
       }}
       data-chip-key={refKey}
       style={{
+        // Soft navy tint + left bar for the "currently signing" cursor.
+        // The text stays in its normal ink colour so the user can read the
+        // word and watch the sign at the same time. Matches the project's
+        // notice-panel idiom (see InjectionNotice / RefusalPanel).
         display: "inline-block",
-        background: isActive ? "var(--navy)" : "transparent",
-        color: isActive ? "var(--paper)" : "inherit",
-        padding: isActive ? "0 4px" : 0,
-        borderRadius: isActive ? "2px" : 0,
-        transition: "background 150ms ease, color 150ms ease",
+        background: isActive ? "rgba(30, 58, 95, 0.10)" : "transparent",
+        color: "inherit",
+        padding: isActive ? "0 6px" : 0,
+        borderLeft: isActive ? "2px solid var(--navy)" : "none",
+        borderRadius: isActive ? "0 2px 2px 0" : 0,
+        transition: "background 150ms ease, padding 150ms ease",
       }}
     >
       <ISLTermChip label={label} entry={entry} />

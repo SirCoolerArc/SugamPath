@@ -166,13 +166,30 @@ export function SideBySideViewer({
                 busy={regenerating}
               />
             </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <AudioPlayer simplification={simplification} language={language} />
-              <ISLPlayAllButton
-                onClick={handlePlayAll}
-                disabled={sequence.length === 0 || playback !== null}
-                count={sequence.length}
-              />
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <AudioPlayer simplification={simplification} language={language} />
+                <ISLPlayAllButton
+                  onClick={handlePlayAll}
+                  disabled={sequence.length === 0 || playback !== null}
+                  count={sequence.length}
+                />
+              </div>
+              {language !== "en" && sequence.length > 0 && (
+                <p
+                  style={{
+                    fontSize: "var(--t-xs)",
+                    color: "var(--ink-quiet)",
+                    fontStyle: "italic",
+                    fontFamily: "var(--font-body)",
+                    maxWidth: "32ch",
+                    textAlign: "right",
+                    lineHeight: 1.4,
+                  }}
+                >
+                  ISL signs are English-grounded — the play-all flow covers more of the document when the text is in English.
+                </p>
+              )}
             </div>
           </div>
 
