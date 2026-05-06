@@ -94,26 +94,25 @@ export function ISLTermChip({ label, entry }: Props) {
             — Indian Sign Language
           </p>
           <p
-            className="display mb-3"
+            className="display mb-2"
             style={{ fontSize: "var(--t-md)" }}
           >
             {entry.term}
           </p>
 
-          <a
-            href={entry.videoUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 mt-1 mono"
+          <video
+            src={entry.videoUrl}
+            controls
+            autoPlay
+            muted
+            playsInline
+            preload="auto"
+            className="block w-full"
             style={{
-              color: "var(--navy)",
-              fontSize: "var(--t-xs)",
-              textDecoration: "underline",
-              textUnderlineOffset: "3px",
+              maxWidth: "240px",
+              background: "var(--ink-faint)",
             }}
-          >
-            watch the sign on Google Drive <ExternalLink size={11} />
-          </a>
+          />
 
           {entry.caption && (
             <p
@@ -123,6 +122,21 @@ export function ISLTermChip({ label, entry }: Props) {
               {entry.caption}
             </p>
           )}
+
+          <a
+            href={entry.videoFallbackUrl ?? entry.videoUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 mt-2 mono"
+            style={{
+              color: "var(--navy)",
+              fontSize: "var(--t-xs)",
+              textDecoration: "underline",
+              textUnderlineOffset: "3px",
+            }}
+          >
+            open on Drive <ExternalLink size={11} />
+          </a>
         </span>
       )}
     </span>
