@@ -24,15 +24,20 @@ export async function GET(): Promise<NextResponse> {
     }
   }
 
-  // Convert the dictionary's Drive API media URLs (which return raw bytes and
-  // some browsers treat as a download) into Drive's public web viewer URLs
-  // (`/file/d/<id>/view`). The viewer plays the clip in a new tab without
-  // forcing a local download. ISLRTC's archive is shared with "anyone with
-  // the link", so no API key is needed for the viewer.
-  const enriched = baseCache.map((entry) => ({
-    ...entry,
-    videoUrl: toDriveViewerUrl(entry.videoUrl),
-  }));
+  // Each entry's `videoUrl` is rewritten to point at our streaming proxy
+  // (/api/isl-video/<fileId>) so <video> elements can play it inline. The
+  // original Drive viewer URL is preserved as `videoFallbackUrl` for the
+  // chip popover's "Open on Drive ↗" footer link and as the fallback when
+  // the proxy fails.
+  const enriched = baseCache.map((entry) => {
+    const fileId = extractDriveFileId(entry.videoUrl);
+    if (!fileId) return entry; // unrecognised URL shape; pass through
+    return {
+      ...entry,
+      videoUrl: `/api/isl-video/${fileId}`,
+      videoFallbackUrl: `https://drive.google.com/file/d/${fileId}/view`,
+    };
+  });
 
   return NextResponse.json(enriched, {
     headers: {
@@ -45,8 +50,7 @@ export async function GET(): Promise<NextResponse> {
 
 const DRIVE_API_FILE_ID = /googleapis\.com\/drive\/v3\/files\/([^/?#]+)/i;
 
-function toDriveViewerUrl(url: string): string {
+function extractDriveFileId(url: string): string | null {
   const m = url.match(DRIVE_API_FILE_ID);
-  if (!m) return url;
-  return `https://drive.google.com/file/d/${m[1]}/view`;
+  return m ? m[1] : null;
 }
