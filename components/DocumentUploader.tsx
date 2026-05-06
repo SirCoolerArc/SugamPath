@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
 import { FileText, Upload, X } from "lucide-react";
 
 const ACCEPT = "image/*,application/pdf";
@@ -8,13 +8,21 @@ const MAX_TOTAL_BYTES = 10 * 1024 * 1024;
 
 interface Props {
   onSubmit: (files: File[]) => void;
+  /** Called whenever the staged file list changes — the parent uses this to
+   *  know whether the VoiceQueryInput should be enabled. */
+  onFilesChange?: (files: File[]) => void;
 }
 
-export function DocumentUploader({ onSubmit }: Props) {
+export function DocumentUploader({ onSubmit, onFilesChange }: Props) {
   const [files, setFiles] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Notify parent whenever the file list changes (for voice query gating).
+  useEffect(() => {
+    onFilesChange?.(files);
+  }, [files, onFilesChange]);
 
   const addFiles = useCallback((incoming: FileList | File[]) => {
     setFiles((prev) => {

@@ -278,6 +278,16 @@ export interface ProcessResponse {
   injection: InjectionCheckResult | null;  // null only if the detector call itself errored
 }
 
+// ─── Voice query response (feat/voice-query) ────────────────────────────────
+// What /api/query returns to the client when the user asks a specific question
+// about their uploaded document via voice or text input.
+export interface QueryResponse {
+  answer: string;            // PII-reconstructed, {{cN}}-substituted answer text
+  language: string;          // "en" or "hi"
+  answerable: boolean;       // false if the document didn't contain the answer
+  meta: { totalLatencyMs: number };
+}
+
 // ─── ISL play-all sequence (post-Stage-2 follow-up) ──────────────────────────
 // One playable item in a sequenced walk over the simplified text. The
 // sequencer (lib/isl_sequencer.ts) produces these in document order; the
