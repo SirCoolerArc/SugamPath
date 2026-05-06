@@ -11,6 +11,8 @@ import { InjectionNotice } from "@/components/InjectionNotice";
 import { ReadingFormSlider } from "@/components/ReadingFormSlider";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { buildSequence } from "@/lib/isl_sequencer";
+import { ISLPlayAllButton } from "@/components/ISLPlayAllButton";
+import { ISLPlayAllPlayer } from "@/components/ISLPlayAllPlayer";
 import type {
   Extraction,
   FaithfulnessResult,
@@ -59,6 +61,53 @@ export function SideBySideViewer({
     () => buildSequence(simplification, dictionary),
     [simplification, dictionary],
   );
+
+  const [playback, setPlayback] = useState<{
+    currentIndex: number;
+    status: "playing" | "paused" | "complete";
+  } | null>(null);
+
+  // Reset playback whenever the underlying simplification changes (form /
+  // language regenerate, or new document upload). Cleanest resolution.
+  useEffect(() => {
+    setPlayback(null);
+  }, [simplification]);
+
+  const handlePlayAll = () => {
+    if (sequence.length === 0) return;
+    setPlayback({ currentIndex: 0, status: "playing" });
+  };
+
+  const handleAdvance = () => {
+    setPlayback((p) => {
+      if (!p) return p;
+      if (p.currentIndex >= sequence.length - 1) {
+        return { ...p, status: "complete" };
+      }
+      return { currentIndex: p.currentIndex + 1, status: "playing" };
+    });
+  };
+
+  const handlePauseToggle = () => {
+    setPlayback((p) => {
+      if (!p || p.status === "complete") return p;
+      return { ...p, status: p.status === "playing" ? "paused" : "playing" };
+    });
+  };
+
+  const handleStop = () => setPlayback(null);
+  const handleReplay = () => setPlayback({ currentIndex: 0, status: "playing" });
+
+  const activeChip = playback
+    ? {
+        sectionIndex: sequence[playback.currentIndex].sectionIndex,
+        tokenIndex: sequence[playback.currentIndex].tokenIndex,
+      }
+    : null;
+
+  const currentSectionHeading = playback
+    ? simplification.sections[sequence[playback.currentIndex].sectionIndex]?.heading ?? ""
+    : "";
 
   return (
     <section className="px-6 lg:px-12 pt-8 pb-32">
@@ -109,7 +158,14 @@ export function SideBySideViewer({
                 busy={regenerating}
               />
             </div>
-            <AudioPlayer simplification={simplification} language={language} />
+            <div className="flex items-center gap-3 flex-wrap">
+              <AudioPlayer simplification={simplification} language={language} />
+              <ISLPlayAllButton
+                onClick={handlePlayAll}
+                disabled={sequence.length === 0 || playback !== null}
+                count={sequence.length}
+              />
+            </div>
           </div>
 
           {regenerationError && (
@@ -127,7 +183,11 @@ export function SideBySideViewer({
               transition: "opacity 200ms ease",
             }}
           >
-            <SimplifiedText simplification={simplification} dictionary={dictionary} />
+            <SimplifiedText
+              simplification={simplification}
+              dictionary={dictionary}
+              activeChip={activeChip}
+            />
 
             {(simplification.simplified_actions.length > 0 ||
               simplification.warnings_plain.length > 0) && (
@@ -141,6 +201,18 @@ export function SideBySideViewer({
           </div>
         </article>
       </div>
+      {playback !== null && sequence[playback.currentIndex] && (
+        <ISLPlayAllPlayer
+          sequence={sequence}
+          currentIndex={playback.currentIndex}
+          status={playback.status}
+          currentSectionHeading={currentSectionHeading}
+          onAdvance={handleAdvance}
+          onPauseToggle={handlePauseToggle}
+          onStop={handleStop}
+          onReplay={handleReplay}
+        />
+      )}
     </section>
   );
 }
