@@ -24,17 +24,15 @@ export async function GET(): Promise<NextResponse> {
     }
   }
 
-  // Inject the Drive API key at request time. The dictionary file ships with
-  // key-less video URLs; the key lives only in server env (.env.local /
-  // deployment env) and is appended on the way out so the client can stream
-  // directly from Drive without a server-side proxy.
-  const apiKey = process.env.GOOGLE_DRIVE_API_KEY ?? "";
-  const enriched = apiKey
-    ? baseCache.map((entry) => ({
-        ...entry,
-        videoUrl: appendKey(entry.videoUrl, apiKey),
-      }))
-    : baseCache;
+  // Convert the dictionary's Drive API media URLs (which return raw bytes and
+  // some browsers treat as a download) into Drive's public web viewer URLs
+  // (`/file/d/<id>/view`). The viewer plays the clip in a new tab without
+  // forcing a local download. ISLRTC's archive is shared with "anyone with
+  // the link", so no API key is needed for the viewer.
+  const enriched = baseCache.map((entry) => ({
+    ...entry,
+    videoUrl: toDriveViewerUrl(entry.videoUrl),
+  }));
 
   return NextResponse.json(enriched, {
     headers: {
@@ -45,8 +43,10 @@ export async function GET(): Promise<NextResponse> {
   });
 }
 
-function appendKey(url: string, apiKey: string): string {
-  if (!url.includes("googleapis.com/drive/")) return url;
-  const sep = url.includes("?") ? "&" : "?";
-  return `${url}${sep}key=${encodeURIComponent(apiKey)}`;
+const DRIVE_API_FILE_ID = /googleapis\.com\/drive\/v3\/files\/([^/?#]+)/i;
+
+function toDriveViewerUrl(url: string): string {
+  const m = url.match(DRIVE_API_FILE_ID);
+  if (!m) return url;
+  return `https://drive.google.com/file/d/${m[1]}/view`;
 }

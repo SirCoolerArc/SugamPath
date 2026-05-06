@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Hand, ExternalLink } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Hand, ExternalLink, X } from "lucide-react";
 
 import type { ISLDictionaryEntry } from "@/lib/types";
 
@@ -10,14 +10,33 @@ interface Props {
   entry: ISLDictionaryEntry;
 }
 
-const VIDEO_EXTS = /\.(mp4|webm|mov|m4v)(\?|#|$)/i;
-
 export function ISLTermChip({ label, entry }: Props) {
   const [open, setOpen] = useState(false);
-  const isDirectVideo = VIDEO_EXTS.test(entry.videoUrl);
+  const wrapperRef = useRef<HTMLSpanElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    function onPointerDown(e: MouseEvent | PointerEvent) {
+      const node = wrapperRef.current;
+      if (node && e.target instanceof Node && !node.contains(e.target)) {
+        setOpen(false);
+      }
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
 
   return (
-    <span className="relative inline-block align-baseline">
+    <span ref={wrapperRef} className="relative inline-block align-baseline">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -52,6 +71,22 @@ export function ISLTermChip({ label, entry }: Props) {
           role="dialog"
           aria-label={`ISL video for "${label}"`}
         >
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Close"
+            className="absolute top-2 right-2 flex items-center justify-center transition-colors"
+            style={{
+              width: "20px",
+              height: "20px",
+              color: "var(--ink-quiet)",
+              background: "transparent",
+              cursor: "pointer",
+            }}
+          >
+            <X size={12} strokeWidth={2} />
+          </button>
+
           <p
             className="mono-label mb-2"
             style={{ color: "var(--navy)" }}
@@ -65,32 +100,20 @@ export function ISLTermChip({ label, entry }: Props) {
             {entry.term}
           </p>
 
-          {isDirectVideo ? (
-            <video
-              src={entry.videoUrl}
-              controls
-              autoPlay
-              loop
-              muted
-              className="block w-full"
-              style={{ background: "var(--ink)" }}
-            />
-          ) : (
-            <a
-              href={entry.videoUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 mt-1 mono"
-              style={{
-                color: "var(--navy)",
-                fontSize: "var(--t-xs)",
-                textDecoration: "underline",
-                textUnderlineOffset: "3px",
-              }}
-            >
-              open the sign on ISLRTC <ExternalLink size={11} />
-            </a>
-          )}
+          <a
+            href={entry.videoUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 mt-1 mono"
+            style={{
+              color: "var(--navy)",
+              fontSize: "var(--t-xs)",
+              textDecoration: "underline",
+              textUnderlineOffset: "3px",
+            }}
+          >
+            watch the sign on Google Drive <ExternalLink size={11} />
+          </a>
 
           {entry.caption && (
             <p
