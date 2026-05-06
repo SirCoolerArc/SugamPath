@@ -71,11 +71,12 @@ Adjust as needed; total target ≈ 5:30. Anchor moments: the ISL chip clicking, 
 
 ### Demo script (the presenter narrates while clicking)
 1. **Drop the discharge summary onto the upload zone.** "Six pages. A real anonymised discharge summary."
-2. **Watch the typewriter pipeline narrate itself.** Don't read the screen aloud — let the narration land. *"This is the system telling the user, in real time, what it's doing. Not a spinner. The ethics story is in the loading screen."*
-3. **The side-by-side view appears.** "On the left, the original. On the right, the rewritten version in plain English at a fifth-grade reading level. The original is always visible. The rewritten text is never the source of truth."
-4. **Click an ISL chip — say, "Doctor".** The video plays inline in the popover. *"Each underlined word in the rewritten text is a sign-language term. Tap any one and watch the sign — inline, no new tab, no friction."*
+2. **(Optional, 15s — the voice-query moment.)** Before clicking Submit, click the microphone icon in the query input and ask aloud: *"When is my next visit?"* — or in Hindi: *"क्या मुझे कोई जांच करवानी है?"* The Web Speech API transcribes; the answer comes back in the same language, drawn only from the document. *"For a user who wants to know one specific thing — a follow-up date, a dose schedule — they don't have to read the whole simplification. They speak. The answer comes back in the language they asked in. And the prompt is constrained: it answers only from the document, refuses advice."* If time is tight, skip this beat and surface it in Q&A.
+3. **Watch the typewriter pipeline narrate itself.** Don't read the screen aloud — let the narration land. *"This is the system telling the user, in real time, what it's doing. Not a spinner. The ethics story is in the loading screen."*
+4. **The side-by-side view appears.** "On the left, the original. On the right, the rewritten version in plain English at a fifth-grade reading level. The original is always visible. The rewritten text is never the source of truth."
+5. **Click an ISL chip — say, "Doctor".** The video plays inline in the popover. *"Each underlined word in the rewritten text is a sign-language term. Tap any one and watch the sign — inline, no new tab, no friction."*
 
-**Speaker note:** Time this to ≤ 60 seconds. If the API is slow, do not wait silently — narrate what's happening.
+**Speaker note:** Time this to ≤ 60 seconds without the voice-query beat, ≤ 75 seconds with it. If the API is slow, do not wait silently — narrate what's happening.
 
 ---
 
@@ -203,16 +204,16 @@ USER  →  /api/process
 **One slide. Acknowledges what we did not solve.** Including this slide is itself part of the ethical-alignment story; do not skip it.
 
 ### What we shipped
-- Vision extraction, PII vault, simplifier, faithfulness audit, injection detector, ISL chip popover, ISL Play-All flow, three-position reading-form slider, three-position language toggle (English / Hindi / code-mixed), audio playback in both languages.
+- Vision extraction, PII vault, simplifier, faithfulness audit, injection detector, ISL chip popover, ISL Play-All flow, three-position reading-form slider, three-position language toggle (English / Hindi / code-mixed), audio playback in both languages, **voice + text query at upload** (Web Speech API for dictation; the answer comes back in the asker's language, refuses advice, and is grounded in the document only).
 
 ### What we deferred, and why
 - **Click-to-highlight cross-references** — PDF originals render in an iframe; visual span-level highlight is bounded. Achievable for image documents in a future iteration.
 - **Per-paragraph confidence dots** — low marginal value at the demo time we had; the existing faithfulness badge already carries the trust story.
-- **User-prompt input box with intent classifier** — a free-text follow-up box centres a literate user. Our primary user is deaf or low-literacy; composing a written question is exactly what the rest of the product removes the burden of doing. We refused to dilute the primary-user framing for the sake of a demo moment.
+- **A typed-only follow-up question box** — we originally specced this and then refused to build it: a free-text *typed* input centres a literate user, and our primary user is deaf or low-literacy. We then rebuilt the feature with **voice input** as the primary path, which addresses the audience concern: a deaf user doesn't need to type, a low-literacy adult can ask verbally. The deferral was the right call; rebuilding it differently is what made it shippable.
 - **Hindi ISL coverage is limited.** ~30 hand-curated Hindi → English alias entries. A Hindi play-all is sparser than English. We surface this in the UI itself.
 
 ### One-line takeaway
-*We shipped what advanced the user. We did not ship features that diluted the audience.*
+*We shipped what advanced the user. The features we initially deferred were rebuilt only when we found a shape that fit the primary user, not just the demo.*
 
 ---
 
@@ -279,8 +280,11 @@ These are not slides. These are talking points for the team to memorise. If a qu
 ### "Is this for deaf users or low-literacy users?"
 > Both, primarily. The product was designed around the deaf primary user — the one with the most demanding modality requirements. Low-literacy users benefit from the same simplifications, the same audio playback, the same ISL clarifications of vocabulary. The design didn't have to be split.
 
-### "What did you decide *not* to build?"
-> A free-text follow-up input box with an intent classifier. We had a full design and a 12-task implementation plan. We pulled it because a free-text input centres a literate user, and our primary user is deaf or low-literacy. Building it would have diluted the audience for the sake of a 30-second demo moment. The spec is preserved in the repo as a record of the design decision.
+### "What did you decide *not* to build, and why?"
+> The original 6.4 spec was a typed-only follow-up question box with an intent classifier. We had a full design and an implementation plan ready. We pulled it the night before submission because a typed-only input centres a literate user, and our primary user is deaf or low-literacy. The deferral was the right call — but a teammate then rebuilt the feature with **voice input** as the primary path, which addresses the audience concern. So what we *don't* have is the typed-only intent classifier; what we *do* have is voice-first question-answering grounded in the document. The spec for the deferred design is preserved in `docs/superpowers/specs/` as a record.
+
+### "How does the voice-query work, and what stops it from giving advice?"
+> Three layers, same architecture as the rest of the product. (1) `prompts/query.md` is constrained to answer *only* from the document — it explicitly says *"if the document doesn't contain the answer, say so."* (2) The same advice-deny list applies: *"should I take this?"*, *"is this safe?"*, *"should I sue?"* all return a polite refusal that redirects the user to a doctor or lawyer. (3) Critical fields stay locked as `{{cN}}` placeholders, so the answer text cannot paraphrase a drug name or dose. The voice path is just a Web Speech API transcriber on the way in; the language and safety properties are identical to the typed path.
 
 ### "What's next after the hackathon?"
 > Three things, ranked. (1) Expand the Hindi → English ISL alias map to ~100+ entries so Hindi play-all coverage matches English. (2) PDF.js-based rendering of PDF originals to enable visual span-level click-to-highlight. (3) An accessibility audit by deaf users of an actual rendered discharge summary — the gap between "we built this for deaf users" and "deaf users use this" is real and we don't pretend to have closed it in two days.
@@ -293,7 +297,7 @@ These are not slides. These are talking points for the team to memorise. If a qu
 |---|---|---|
 | 1. Hook | Slides | 0:00 – 0:15 |
 | 2. The user | Slides | 0:15 – 1:00 |
-| 3. Demo Act I — upload + side-by-side + chip | Live | 1:00 – 2:00 |
+| 3. Demo Act I — upload + (optional voice query) + side-by-side + chip | Live | 1:00 – 2:15 |
 | 4. Demo Act II — safety reveal | Live | 2:00 – 2:45 |
 | 5. Demo Act III — Play All Signs | Live | 2:45 – 3:30 |
 | 6. What else this handles | Slides | 3:30 – 4:00 |
@@ -303,7 +307,7 @@ These are not slides. These are talking points for the team to memorise. If a qu
 | 10. Close | Slides | 5:30 – 5:45 |
 | 11. Team / repo | (Q&A only) | — |
 
-If the demo runs long, drop the network-tab moment in Act II (Slide 4). If the demo is going short, expand Slide 7 with a deeper dive into one stage (the faithfulness judge is the highest-impact deep dive).
+If the demo runs long, drop the voice-query beat in Act I and the network-tab moment in Act II (Slide 4). If the demo is going short, expand Slide 7 with a deeper dive into one stage (the faithfulness judge is the highest-impact deep dive). The voice-query is the most droppable live moment because it can be surfaced cleanly in Q&A; the safety reveal in Act II is the moment that *cannot* be cut without losing the deck's pivot.
 
 ---
 
