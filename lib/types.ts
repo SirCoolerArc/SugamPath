@@ -151,6 +151,15 @@ export const READING_LEVELS = ["paragraphs", "shorter", "list"] as const;
 export type ReadingLevel = (typeof READING_LEVELS)[number];
 export const DEFAULT_READING_LEVEL: ReadingLevel = "paragraphs";
 
+// ─── Target language (Stage 2 #22) ───────────────────────────────────────────
+// Indian users code-switch; the demo defaults to English but Hindi-primary and
+// code-mixed renderings are first-class. Threaded through `simplify()` and
+// folded into the simplifier prompt as an extra constraint section. The
+// faithfulness judge is language-aware separately.
+export const TARGET_LANGUAGES = ["en", "hi", "code-mixed"] as const;
+export type TargetLanguage = (typeof TARGET_LANGUAGES)[number];
+export const DEFAULT_TARGET_LANGUAGE: TargetLanguage = "en";
+
 // ─── Simplification (Checkpoint 4.3 output) ──────────────────────────────────
 // What the simplifier emits, before any client-side post-processing. Critical
 // field references appear as `{{cN}}` placeholders that the renderer

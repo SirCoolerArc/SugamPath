@@ -15,9 +15,12 @@ import { GeminiRecitationError } from "@/lib/gemini_client";
 import {
   ExtractionSchema,
   READING_LEVELS,
+  TARGET_LANGUAGES,
+  DEFAULT_TARGET_LANGUAGE,
   type FaithfulnessResult,
   type ReadingLevel,
   type Simplification,
+  type TargetLanguage,
 } from "@/lib/types";
 import { z } from "zod";
 
@@ -37,13 +40,17 @@ const ResimplifyRequestSchema = z.object({
   extraction: ExtractionSchema,
   vault: z.array(VaultEntrySchema),
   level: z.enum(READING_LEVELS),
+  // Optional for back-compat with clients that haven't been updated yet;
+  // server defaults to "en" when missing. The cache key on the client side is
+  // expected to be (level, language).
+  language: z.enum(TARGET_LANGUAGES).optional(),
 });
 
 export interface ResimplifyResponse {
   simplification: Simplification;
   faithfulness: FaithfulnessResult | null;
   warnings: string[];
-  meta: { totalLatencyMs: number; level: ReadingLevel };
+  meta: { totalLatencyMs: number; level: ReadingLevel; language: TargetLanguage };
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -71,6 +78,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const { redactedExtraction, extraction, vault: vaultEntries, level } = parseResult.data;
+  const language = parseResult.data.language ?? DEFAULT_TARGET_LANGUAGE;
   const vault = new Map(vaultEntries);
 
   const startedAt = Date.now();
@@ -79,7 +87,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // ─── Simplify with the requested level ─────────────────────────────────
   let rawSimplification: Simplification;
   try {
-    const result = await simplify({ redactedExtraction, level });
+    const result = await simplify({ redactedExtraction, level, language });
     rawSimplification = result.simplification;
     warnings.push(...result.warnings);
   } catch (err) {
@@ -121,6 +129,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         const retryResult = await simplify({
           redactedExtraction,
           level,
+          language,
           extraGuidance: buildSimplifyRetryGuidance(firstVerdict),
         });
         rawSimplification = retryResult.simplification;
@@ -161,6 +170,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     meta: {
       totalLatencyMs: Date.now() - startedAt,
       level,
+      language,
     },
   };
 

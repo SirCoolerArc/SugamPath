@@ -6,10 +6,12 @@ import { parseSimplification } from "@/lib/validator";
 import { reconstruct, type PIIVault } from "@/lib/pii_vault";
 import {
   DEFAULT_READING_LEVEL,
+  DEFAULT_TARGET_LANGUAGE,
   type CriticalField,
   type Extraction,
   type ReadingLevel,
   type Simplification,
+  type TargetLanguage,
 } from "@/lib/types";
 
 const MAX_ATTEMPTS = 3;
@@ -24,6 +26,10 @@ export interface SimplifyInput {
   /** Reading-form preference. Determines the form of the output (paragraphs,
    *  shorter sentences, or as-a-list). Default: "paragraphs". */
   level?: ReadingLevel;
+  /** Target language for the simplified prose. PII tokens and {{cN}}
+   *  placeholders flow through unchanged regardless of this setting; only the
+   *  surrounding narration is translated. Default: "en". */
+  language?: TargetLanguage;
 }
 
 export interface SimplifyResult {
@@ -64,6 +70,7 @@ export async function simplify(input: SimplifyInput): Promise<SimplifyResult> {
   let lastRawExcerpt = "";
 
   const level = input.level ?? DEFAULT_READING_LEVEL;
+  const language = input.language ?? DEFAULT_TARGET_LANGUAGE;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const prompt = buildPrompt(
@@ -73,6 +80,7 @@ export async function simplify(input: SimplifyInput): Promise<SimplifyResult> {
       attempt,
       input.extraGuidance,
       level,
+      language,
     );
 
     const raw = await callGemini(prompt);
@@ -192,6 +200,7 @@ function buildPrompt(
   attempt: number,
   extraGuidance: string | undefined,
   level: ReadingLevel,
+  language: TargetLanguage,
 ): string {
   const inputSection = `\n\n---\n\n## Input extraction\n\n\`\`\`json\n${JSON.stringify(redactedExtraction, null, 2)}\n\`\`\`\n`;
 
@@ -210,7 +219,11 @@ function buildPrompt(
     ? `\n\n---\n\n## Output form\n\n${levelGuidance(level)}\n`
     : "";
 
-  return base + inputSection + retrySection + extraSection + levelSection;
+  const languageSection = languageGuidance(language)
+    ? `\n\n---\n\n## Output language\n\n${languageGuidance(language)}\n`
+    : "";
+
+  return base + inputSection + retrySection + extraSection + levelSection + languageSection;
 }
 
 /** Constraint string folded into the simplify prompt to control the *form* of
@@ -239,6 +252,42 @@ function levelGuidance(level: ReadingLevel): string {
         "- Section headings stay as before.",
         "- Action items and warnings stay in their existing array structure (do not bullet those — they already are lists).",
         "- Every {{cN}} placeholder still counts as one word and stays inside the bullet it belongs to.",
+      ].join("\n");
+  }
+}
+
+/** Constraint string folded into the simplify prompt to control the *language*
+ *  of the output. PII tokens (`[NAME_001]`, `[DATE_002]`) and critical-field
+ *  placeholders (`{{c1}}`) flow through unchanged regardless — only the
+ *  narration around them is translated. The base prompt's example uses English
+ *  prose; for `hi` / `code-mixed` we explicitly override that example so the
+ *  model doesn't anchor on it. The output JSON's `language` field must reflect
+ *  the chosen language (`en` / `hi` / `code-mixed`). */
+function languageGuidance(language: TargetLanguage): string {
+  switch (language) {
+    case "en":
+      return ""; // default — base prompt already targets English
+    case "hi":
+      return [
+        "Language: Hindi (हिन्दी), Devanagari script.",
+        "- Write all narration in plain conversational Hindi (हिन्दी).",
+        "- Section headings (`heading`), section bodies (`body`), action `what` / `deadline_plain` / `verify_with_plain`, and `warnings_plain` — all in Hindi.",
+        "- PII tokens like `[NAME_001]`, `[DATE_002]`, `[PHONE_003]` flow through CHARACTER-FOR-CHARACTER. Do NOT translate, transliterate, or wrap them.",
+        "- Critical-field placeholders `{{c1}}`, `{{c2}}` flow through CHARACTER-FOR-CHARACTER. Do NOT translate or wrap them.",
+        "- Use everyday Hindi a 10-year-old understands. Avoid Sanskritised registers, court Hindi, or English loan-words for which a plain Hindi word exists (use 'दवाई' not 'medication').",
+        "- For technical words that have no clean Hindi equivalent (drug classes, surgical procedures), keep the English word in Devanagari transliteration (e.g. 'एस्पिरिन', 'सर्जरी').",
+        "- Set the output JSON `language` field to `\"hi\"`.",
+      ].join("\n");
+    case "code-mixed":
+      return [
+        "Language: Hindi-English code-mixed (दोनों), the way Indians actually speak.",
+        "- Write narration in natural Hindi-English code-mixed prose. Sentences may switch language mid-clause where that is how the idea would be spoken aloud.",
+        "- Function words and connective tissue (verbs of doing/going, time expressions, common nouns like 'doctor', 'hospital', 'medicine') stay in whichever language reads more naturally — match how a Hindi-English speaker would say it.",
+        "- Devanagari script for Hindi tokens; Latin script for English tokens. No transliteration of one into the other.",
+        "- PII tokens like `[NAME_001]`, `[DATE_002]`, `[PHONE_003]` flow through CHARACTER-FOR-CHARACTER. Do NOT translate, transliterate, or wrap them.",
+        "- Critical-field placeholders `{{c1}}`, `{{c2}}` flow through CHARACTER-FOR-CHARACTER. Do NOT translate or wrap them.",
+        "- Section headings (`heading`) may be either language depending on which is more natural for the topic.",
+        "- Set the output JSON `language` field to `\"code-mixed\"`.",
       ].join("\n");
   }
 }
