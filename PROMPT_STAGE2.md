@@ -6,52 +6,19 @@ The human directing you is a strong prompt engineer who has been pair-coding thr
 
 ---
 
-## Step 0 — Read these three documents in order, then summarise
+## Quick context (no warm-up — go straight to Checkpoint 6.1)
 
-1. **`CLAUDE.md`** — the project contract. Authoritative.
-2. **`PROGRESS.md`** — what shipped in Stage 0 and Stage 1, where every file lives, what works, what is intentionally not done. Reads in ~6 minutes.
-3. **(this file)** PROMPT_STAGE2.md
+This session continues immediately from the Stage 1 session. Skip the customary read-everything-and-summarise dance — the previous session already verified env, typecheck, lint, and git state on the same machine in the last few minutes. The repo is at `ffcea2f` on `main`, working tree clean, `stage-1-complete` tagged, both Gemini keys set, dev server stopped.
 
-After reading, give a 7-line summary covering:
-- The product in one sentence
-- The Stage 0 invariants you will not violate (CLAUDE.md §3)
-- Which two Stage 1 items were deliberately skipped, and why
-- Which two Stage 2 items you will ship first and why
-- Where the resimplify endpoint lives in the codebase, and what it takes
-- Where the vault round-trips through, and why that's not new PII surface
-- The git attribution rule (no Claude attribution anywhere on GitHub)
+**Read `CLAUDE.md` and `PROGRESS.md` only as you need them** — Stage 2 work touches specific files, not the whole codebase. Reach for them when a checkpoint says to.
 
-This is a sanity check. Wrong summary → fix before code.
+**One thing to internalise before code:** the Hindi support memory at `~/.claude/projects/c--Users-Rishabh-Kumar-AIC-Hackathon/memory/project_hindi_support.md` lists four concrete patches for Checkpoint 6.1. Read it once, then start with sub-item 1.
+
+If anything seems wrong (typecheck fails, env keys missing, dev server squatting on port 3000), surface that *when you hit it* — don't pre-flight everything looking for trouble.
 
 ---
 
-## Step 1 — Verify environment and state
-
-Run these in parallel and report:
-
-```bash
-node --version       # expect 20.x or higher
-npm --version        # expect 10.x or higher
-git status           # expect clean working tree
-git log --oneline | head -6   # expect e098b65 most recent
-git tag --list       # expect at least: stage-0-complete (stage-1-complete may or may not be present)
-ls demo_assets/      # tell me what files exist locally; some are gitignored
-cat .env.local 2>/dev/null | grep -E "^(GEMINI_API_KEY|GOOGLE_DRIVE_API_KEY)=" | sed 's/=.*$/=<set>/'
-```
-
-If any fail, stop and tell the user.
-
-Also: typecheck the project to confirm Stage 1 is clean before adding to it:
-
-```bash
-rm -f tsconfig.tsbuildinfo && npx tsc --noEmit
-```
-
-If `stage-1-complete` is NOT yet tagged, ask the user before tagging it yourself — they may want to tag from a slightly earlier commit, or tag with their own message.
-
----
-
-## Step 2 — Stage 2 build plan
+## Step 1 — Stage 2 build plan
 
 Work through these in order. **Stop at each checkpoint and confirm direction with the user before proceeding.** Do not chain checkpoints into a continuous burst.
 
@@ -115,7 +82,7 @@ Architecture:
 
 ---
 
-## Step 3 — Tag and ship
+## Step 2 — Tag and ship
 
 When Stage 2 is complete and clean:
 
@@ -152,4 +119,4 @@ If any Stage 2 item is half-done and the hackathon submission deadline (2 PM, 6 
 - If a feature isn't in Stage 2 (#20–23), it doesn't exist in this session.
 - If you're about to add a dependency or refactor working code: stop, ask.
 
-Begin with Step 0.
+Begin with Checkpoint 6.1, sub-item 1 (Devanagari regex cues).
