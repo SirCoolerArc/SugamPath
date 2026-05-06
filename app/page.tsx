@@ -5,12 +5,14 @@ import { useCallback, useState } from "react";
 import { DocumentUploader } from "@/components/DocumentUploader";
 import { ProcessingStage } from "@/components/ProcessingStage";
 import { SideBySideViewer } from "@/components/SideBySideViewer";
+import { VoiceQueryInput } from "@/components/VoiceQueryInput";
 import {
   DEFAULT_READING_LEVEL,
   DEFAULT_TARGET_LANGUAGE,
   type Extraction,
   type FaithfulnessResult,
   type InjectionCheckResult,
+  type QueryResponse,
   type ReadingLevel,
   type Simplification,
   type TargetLanguage,
@@ -54,6 +56,7 @@ interface ProcessError {
 type Stage =
   | { kind: "idle" }
   | { kind: "processing"; files: File[]; previews: string[] }
+  | { kind: "querying"; files: File[]; previews: string[]; query: string }
   | {
     kind: "result";
     data: ProcessSuccess;
@@ -65,10 +68,14 @@ type Stage =
     regenerating: boolean;
     regenerationError: string | null;
   }
+  | { kind: "queryResult"; answer: QueryResponse; files: File[]; previews: string[]; query: string }
   | { kind: "error"; error: ProcessError; previews: string[]; files: File[] };
 
 export default function Home() {
   const [stage, setStage] = useState<Stage>({ kind: "idle" });
+  // Files held in the uploader before the user submits — needed so VoiceQueryInput
+  // can grab them for the /api/query call without a separate upload.
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
 
   const handleSubmit = useCallback(async (files: File[], reusePreviews?: string[]) => {
     // On retry we already have object URLs for the previews — reuse them so we
@@ -264,10 +271,62 @@ export default function Home() {
 
   const reset = useCallback(() => {
     if (stage.kind !== "idle") {
-      for (const url of stage.previews ?? []) URL.revokeObjectURL(url);
+      for (const url of (stage as { previews?: string[] }).previews ?? []) URL.revokeObjectURL(url);
     }
     setStage({ kind: "idle" });
+    setPendingFiles([]);
   }, [stage]);
+
+  // ─── Voice/text query handler ──────────────────────────────────────────
+  const handleQuerySubmit = useCallback(
+    async (query: string, language: "en" | "hi") => {
+      // Use pendingFiles from the DocumentUploader (tracked via onFilesChange).
+      if (pendingFiles.length === 0) return;
+      const files = pendingFiles;
+      const previews = files.map((f) => URL.createObjectURL(f));
+      setStage({ kind: "querying", files, previews, query });
+
+      const form = new FormData();
+      for (const f of files) form.append("document", f);
+      form.append("query", query);
+      form.append("language", language);
+
+      try {
+        const res = await fetch("/api/query", { method: "POST", body: form });
+        const text = await res.text();
+        let body: QueryResponse & Partial<ProcessError>;
+        try {
+          body = JSON.parse(text);
+        } catch {
+          body = { answer: "", language, answerable: false, meta: { totalLatencyMs: 0 }, error: "Bad response" };
+        }
+
+        if (!res.ok) {
+          setStage({
+            kind: "error",
+            error: { error: body.error ?? "Query failed", status: res.status },
+            previews,
+            files,
+          });
+          return;
+        }
+
+        setStage({ kind: "queryResult", answer: body, files, previews, query });
+      } catch (err) {
+        setStage({
+          kind: "error",
+          error: {
+            error: err instanceof Error ? err.message : String(err),
+            status: 0,
+            isNetworkError: true,
+          },
+          previews,
+          files,
+        });
+      }
+    },
+    [pendingFiles],
+  );
 
   return (
     <main className="min-h-screen">
@@ -275,15 +334,30 @@ export default function Home() {
 
       {stage.kind === "idle" && (
         <Landing>
-          <DocumentUploader onSubmit={handleSubmit} />
+          <DocumentUploader onSubmit={handleSubmit} onFilesChange={setPendingFiles} />
+          <div className="lg:col-span-5 lg:col-start-8 fade-up fade-up-delay-3 mt-4">
+            <VoiceQueryInput
+              onSubmit={handleQuerySubmit}
+              disabled={pendingFiles.length === 0}
+            />
+          </div>
         </Landing>
       )}
 
-      {stage.kind === "processing" && (
+      {(stage.kind === "processing" || stage.kind === "querying") && (
         <ProcessingStage
           previews={stage.previews}
           mimeTypes={stage.files.map((f) => f.type)}
           fileCount={stage.files.length}
+        />
+      )}
+
+      {stage.kind === "queryResult" && (
+        <AnswerView
+          answer={stage.answer}
+          query={stage.query}
+          onReset={reset}
+          onFullSimplify={() => void handleSubmit(stage.files)}
         />
       )}
 
@@ -404,6 +478,101 @@ function Promise({ title, children }: { title: string; children: React.ReactNode
         {children}
       </p>
     </div>
+  );
+}
+
+/* ───── Answer view (voice/text query result) ──────────────────────────── */
+
+function AnswerView({
+  answer,
+  query,
+  onReset,
+  onFullSimplify,
+}: {
+  answer: QueryResponse;
+  query: string;
+  onReset: () => void;
+  onFullSimplify: () => void;
+}) {
+  return (
+    <section className="px-8 lg:px-16 py-16 lg:py-24 max-w-3xl mx-auto fade-up">
+      <p className="mono-label mb-4" style={{ color: "var(--navy)" }}>
+        — your question
+      </p>
+      <h2
+        className="display mb-8"
+        style={{ fontSize: "var(--t-xl)", color: "var(--ink)" }}
+      >
+        &ldquo;{query}&rdquo;
+      </h2>
+
+      <div
+        className="p-8"
+        style={{
+          background: "var(--paper-deep)",
+          border: "1px solid var(--ink-faint)",
+        }}
+      >
+        <p className="mono-label mb-4" style={{ color: "var(--navy)" }}>
+          — answer from your document
+        </p>
+        <div
+          style={{
+            fontSize: "var(--t-md)",
+            lineHeight: 1.7,
+            color: "var(--ink)",
+          }}
+          dangerouslySetInnerHTML={{ __html: answer.answer }}
+        />
+        {!answer.answerable && (
+          <p
+            className="mt-4 mono-label"
+            style={{ color: "var(--rust)", fontSize: "var(--t-xs)" }}
+          >
+            This question could not be fully answered from the document.
+          </p>
+        )}
+        <p
+          className="mt-6 mono-label"
+          style={{ color: "var(--ink-quiet)", fontSize: "10px" }}
+        >
+          answered in {(answer.meta.totalLatencyMs / 1000).toFixed(1)}s · language: {answer.language}
+        </p>
+      </div>
+
+      <div className="mt-10 flex flex-wrap gap-3">
+        <button
+          onClick={onFullSimplify}
+          className="px-5 py-3 transition-colors"
+          style={{
+            background: "var(--ink)",
+            color: "var(--paper)",
+            fontFamily: "var(--font-mono)",
+            fontSize: "var(--t-sm)",
+            letterSpacing: "0.05em",
+            cursor: "pointer",
+            border: "none",
+          }}
+        >
+          read the full document →
+        </button>
+        <button
+          onClick={onReset}
+          className="px-5 py-3 transition-colors"
+          style={{
+            background: "transparent",
+            color: "var(--ink)",
+            border: "1px solid var(--ink)",
+            fontFamily: "var(--font-mono)",
+            fontSize: "var(--t-sm)",
+            letterSpacing: "0.05em",
+            cursor: "pointer",
+          }}
+        >
+          upload a different document
+        </button>
+      </div>
+    </section>
   );
 }
 
