@@ -276,7 +276,6 @@ The user has auto-memory at `C:\Users\Rishabh Kumar\.claude\projects\c--Users-Ri
 | `lib/renderers.ts` | Simplifier orchestration (level- and language-aware) + structural critical-field substitution + PII reconstruction |
 | `lib/faithfulness.ts` | LLM-as-judge audit; verdict normalisation; language-aware judge prompt |
 | `lib/injection_check.ts` | Adversarial-content detector |
-| `lib/intent.ts` | (Reserved for 6.4 if we ever build it; currently unused — see deferred-status spec) |
 | `lib/chip_resolver.ts` | Shared tokeniser + dictionary index + Devanagari alias resolver + critical-field span splitter |
 | `lib/isl_sequencer.ts` | Pure `buildSequence(simplification, dictionary)` — walks sections in document order, skips critical-field HTML |
 | `data/pii_patterns.ts` | 16 ordered Indian PII regexes (Latin + Devanagari cues) |
