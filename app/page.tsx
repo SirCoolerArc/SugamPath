@@ -27,19 +27,23 @@ interface ProcessError {
   error: string;
   stage?: string;
   detail?: string | string[];
+  status?: number;          // HTTP status the route returned, or 0 for network failure
+  isNetworkError?: boolean; // fetch threw before the request reached the server
 }
 
 type Stage =
   | { kind: "idle" }
   | { kind: "processing"; files: File[]; previews: string[] }
   | { kind: "result"; data: ProcessSuccess; previews: string[]; files: File[] }
-  | { kind: "error"; error: ProcessError; previews: string[] };
+  | { kind: "error"; error: ProcessError; previews: string[]; files: File[] };
 
 export default function Home() {
   const [stage, setStage] = useState<Stage>({ kind: "idle" });
 
-  const handleSubmit = useCallback(async (files: File[]) => {
-    const previews = files.map((f) => URL.createObjectURL(f));
+  const handleSubmit = useCallback(async (files: File[], reusePreviews?: string[]) => {
+    // On retry we already have object URLs for the previews — reuse them so we
+    // don't leak (or briefly flash) new ones. On a fresh submit, mint new URLs.
+    const previews = reusePreviews ?? files.map((f) => URL.createObjectURL(f));
     setStage({ kind: "processing", files, previews });
 
     const form = new FormData();
@@ -48,26 +52,44 @@ export default function Home() {
     try {
       const res = await fetch("/api/process", { method: "POST", body: form });
       const text = await res.text();
-      let body: unknown;
+      let body: Partial<ProcessError> & Partial<ProcessSuccess>;
       try {
-        body = JSON.parse(text);
+        body = JSON.parse(text) as Partial<ProcessError> & Partial<ProcessSuccess>;
       } catch {
-        body = { error: `Server returned non-JSON response (${res.status}).`, detail: text.slice(0, 200) };
+        body = {
+          error: `Server returned a response we could not read.`,
+          detail: text.slice(0, 200),
+        };
       }
 
       if (!res.ok) {
-        setStage({ kind: "error", error: body as ProcessError, previews });
+        setStage({
+          kind: "error",
+          error: { ...(body as ProcessError), status: res.status },
+          previews,
+          files,
+        });
         return;
       }
       setStage({ kind: "result", data: body as ProcessSuccess, previews, files });
     } catch (err) {
       setStage({
         kind: "error",
-        error: { error: err instanceof Error ? err.message : String(err) },
+        error: {
+          error: err instanceof Error ? err.message : String(err),
+          status: 0,
+          isNetworkError: true,
+        },
         previews,
+        files,
       });
     }
   }, []);
+
+  const retry = useCallback(() => {
+    if (stage.kind !== "error") return;
+    void handleSubmit(stage.files, stage.previews);
+  }, [stage, handleSubmit]);
 
   const reset = useCallback(() => {
     if (stage.kind !== "idle") {
@@ -102,7 +124,9 @@ export default function Home() {
         />
       )}
 
-      {stage.kind === "error" && <ErrorView error={stage.error} onReset={reset} />}
+      {stage.kind === "error" && (
+        <ErrorView error={stage.error} onReset={reset} onRetry={retry} />
+      )}
     </main>
   );
 }
@@ -204,43 +228,170 @@ function Promise({ title, children }: { title: string; children: React.ReactNode
 
 /* ───── Error view ─────────────────────────────────────────────────────── */
 
-function ErrorView({ error, onReset }: { error: ProcessError; onReset: () => void }) {
+interface ErrorPresentation {
+  headline: string;
+  body: string;
+  allowRetrySame: boolean; // show the "try again with same document" button
+}
+
+function presentError(error: ProcessError): ErrorPresentation {
+  const status = error.status ?? 0;
+  const stage = error.stage;
+  const message = error.error ?? "";
+  // Gemini RECITATION blocks come back as 502 with a content-safety phrase.
+  const isContentBlock =
+    /content-safety|declined|recitation/i.test(message);
+
+  if (error.isNetworkError) {
+    return {
+      headline: "We couldn’t reach the server.",
+      body:
+        "Check your internet connection and try again. Your document never left your browser.",
+      allowRetrySame: true,
+    };
+  }
+
+  if (status === 413) {
+    return {
+      headline: "This document is too large.",
+      body:
+        "We can read documents up to 10 MB. Try compressing the file, or upload fewer pages at a time.",
+      allowRetrySame: false,
+    };
+  }
+
+  if (status === 400) {
+    return {
+      headline: "We couldn’t read your upload.",
+      body:
+        "Something went wrong when we received your file. It may have been corrupted in transit. Try uploading again, or pick a different file.",
+      allowRetrySame: true,
+    };
+  }
+
+  if (status === 422 && stage === "extraction") {
+    return {
+      headline: "We couldn’t make sense of this document.",
+      body:
+        "The image may be unclear, or the document may be in a format we haven’t learned yet. The original is still safe with you — try a clearer scan, or a different document.",
+      allowRetrySame: false,
+    };
+  }
+
+  if (status === 422 && stage === "simplification") {
+    return {
+      headline: "We read your document, but couldn’t simplify it cleanly.",
+      body:
+        "Sometimes the language in a document is unusual enough that we can’t rewrite it safely. The original is always available to you on the side.",
+      allowRetrySame: false,
+    };
+  }
+
+  if (status === 502 && isContentBlock) {
+    return {
+      headline: "We can’t read this document.",
+      body:
+        "The model declined to read this document because parts of it look very close to text it was trained on. This isn’t your fault — try a different document.",
+      allowRetrySame: false,
+    };
+  }
+
+  if (status === 502) {
+    return {
+      headline: "The model is busy right now.",
+      body:
+        "We couldn’t reach the language model to read your document. This usually clears up in a moment.",
+      allowRetrySame: true,
+    };
+  }
+
+  // Fallback for anything we didn't anticipate.
+  return {
+    headline: "Something went wrong.",
+    body:
+      message ||
+      "We hit an error we didn’t plan for. Your document never left your browser. Please try again, or pick a different document.",
+    allowRetrySame: true,
+  };
+}
+
+function ErrorView({
+  error,
+  onReset,
+  onRetry,
+}: {
+  error: ProcessError;
+  onReset: () => void;
+  onRetry: () => void;
+}) {
+  const { headline, body, allowRetrySame } = presentError(error);
+
   return (
     <section className="px-8 lg:px-16 py-24 max-w-2xl mx-auto fade-up">
-      <p className="mono-label mb-4" style={{ color: "var(--rust)" }}>— processing failed</p>
-      <h2 className="display mb-4" style={{ fontSize: "var(--t-xl)" }}>
-        We couldn’t process this document.
+      <p className="mono-label mb-4" style={{ color: "var(--rust)" }}>
+        — we couldn’t finish reading this
+      </p>
+      <h2 className="display mb-5" style={{ fontSize: "var(--t-xl)" }}>
+        {headline}
       </h2>
-      <p style={{ color: "var(--ink-muted)" }}>{error.error}</p>
-      {error.stage && (
-        <p className="mono-label mt-3">stage: {error.stage}</p>
-      )}
-      {error.detail && (
-        <pre
-          className="mono mt-6 p-4 overflow-x-auto"
-          style={{
-            background: "var(--paper-deep)",
-            fontSize: "var(--t-xs)",
-            color: "var(--ink-muted)",
-            border: "var(--hairline)",
-          }}
-        >
-          {Array.isArray(error.detail) ? error.detail.join("\n") : error.detail}
-        </pre>
-      )}
-      <button
-        onClick={onReset}
-        className="mt-8 px-5 py-3 transition-colors"
+      <p
         style={{
-          background: "var(--ink)",
-          color: "var(--paper)",
-          fontFamily: "var(--font-mono)",
-          fontSize: "var(--t-sm)",
-          letterSpacing: "0.05em",
+          color: "var(--ink-muted)",
+          fontSize: "var(--t-md)",
+          lineHeight: 1.6,
+          maxWidth: "60ch",
         }}
       >
-        try a different document
-      </button>
+        {body}
+      </p>
+
+      <div className="mt-10 flex flex-wrap gap-3">
+        {allowRetrySame && (
+          <button
+            onClick={onRetry}
+            className="px-5 py-3 transition-colors"
+            style={{
+              background: "var(--ink)",
+              color: "var(--paper)",
+              fontFamily: "var(--font-mono)",
+              fontSize: "var(--t-sm)",
+              letterSpacing: "0.05em",
+              cursor: "pointer",
+            }}
+          >
+            try again with the same document
+          </button>
+        )}
+        <button
+          onClick={onReset}
+          className="px-5 py-3 transition-colors"
+          style={{
+            background: allowRetrySame ? "transparent" : "var(--ink)",
+            color: allowRetrySame ? "var(--ink)" : "var(--paper)",
+            border: allowRetrySame ? "1px solid var(--ink)" : "none",
+            fontFamily: "var(--font-mono)",
+            fontSize: "var(--t-sm)",
+            letterSpacing: "0.05em",
+            cursor: "pointer",
+          }}
+        >
+          upload a different document
+        </button>
+      </div>
+
+      {/* Tech detail — kept only as a small footnote for diagnostics. The
+          status code is useful when the user shows a screenshot to support;
+          the raw error text is hidden by default. */}
+      {(error.status || error.stage) && (
+        <p
+          className="mono-label mt-12"
+          style={{ color: "var(--ink-quiet)", fontSize: "10px" }}
+        >
+          {error.status ? `code ${error.status}` : ""}
+          {error.status && error.stage ? " · " : ""}
+          {error.stage ? `stage: ${error.stage}` : ""}
+        </p>
+      )}
     </section>
   );
 }

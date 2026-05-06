@@ -20,13 +20,19 @@ interface PipelineStep {
 }
 
 const PIPELINE: PipelineStep[] = [
-  { delayMs: 200,    text: "Reading your document with care",       meta: "looking at every page, slowly" },
+  { delayMs: 200,    text: "Reading your document with care",          meta: "looking at every page, slowly" },
   { delayMs: 4_500,  text: "Finding the personal details on the page", meta: "your name, your numbers, your address" },
-  { delayMs: 6_500,  text: "Hiding them safely while we work",      meta: "nothing personal leaves your browser as plain text" },
-  { delayMs: 9_000,  text: "Keeping every important detail exact",  meta: "we cannot change a number, a date, or a name" },
-  { delayMs: 13_000, text: "Rewriting it in plain, kind words",     meta: "short sentences · everyday language" },
-  { delayMs: 22_000, text: "Putting your details back, only on your screen", meta: "just for you to read · we keep no copy" },
+  { delayMs: 6_500,  text: "Hiding them safely while we work",         meta: "nothing personal leaves your browser as plain text" },
+  { delayMs: 9_000,  text: "Keeping every important detail exact",     meta: "we cannot change a number, a date, or a name" },
+  { delayMs: 13_000, text: "Rewriting it in plain, kind words",        meta: "short sentences · everyday language" },
+  { delayMs: 22_000, text: "Watching for unusual phrasing in the document", meta: "checking for anything written to manipulate a machine reader" },
+  { delayMs: 28_000, text: "Cross-checking the simplified text against the original", meta: "every important detail must match · the bridge cannot lie" },
+  { delayMs: 36_000, text: "Putting your details back, only on your screen", meta: "just for you to read · we keep no copy" },
 ];
+
+// Past this point, the narration is exhausted; we surface a quiet "still
+// working" line so the user doesn't feel abandoned mid-wait.
+const STILL_WORKING_THRESHOLD_MS = 50_000;
 
 interface Props {
   previews: string[];
@@ -90,17 +96,31 @@ export function ProcessingStage({ previews, fileCount }: Props) {
             ))}
           </ol>
 
-          <p
-            className="mt-16"
-            style={{
-              color: "var(--ink-quiet)",
-              fontSize: "var(--t-sm)",
-              fontStyle: "italic",
-              fontFamily: "var(--font-body)",
-            }}
-          >
-            Thank you for your patience. Reading the State&rsquo;s words slowly is the careful thing to do.
-          </p>
+          {elapsed < STILL_WORKING_THRESHOLD_MS ? (
+            <p
+              className="mt-16"
+              style={{
+                color: "var(--ink-quiet)",
+                fontSize: "var(--t-sm)",
+                fontStyle: "italic",
+                fontFamily: "var(--font-body)",
+              }}
+            >
+              Thank you for your patience. Reading the State&rsquo;s words slowly is the careful thing to do.
+            </p>
+          ) : (
+            <p
+              className="mt-16 fade-up"
+              style={{
+                color: "var(--ink-muted)",
+                fontSize: "var(--t-sm)",
+                fontStyle: "italic",
+                fontFamily: "var(--font-body)",
+              }}
+            >
+              This document is taking longer than usual. We&rsquo;re still reading it carefully &mdash; please wait.
+            </p>
+          )}
         </div>
       </div>
     </section>
