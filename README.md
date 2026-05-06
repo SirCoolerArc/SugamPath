@@ -38,72 +38,83 @@ A user can:
 ## How it's built — architecture at a glance
 
 ```
-                   ┌────────────────────────────────────────────────────────────┐
-                   │  Browser (Next.js client, app/page.tsx state machine)      │
-                   │  idle → processing → result → error                        │
-                   │  Per-(level, language) cache; vault round-trip; no logs    │
-                   └─────────────┬───────────────────────────────┬──────────────┘
-                                 │                               │
-                  POST /api/process (multipart)        POST /api/resimplify (JSON)
-                                 │                               │
-                                 ▼                               ▼
-                   ┌──────────────────────────┐     ┌──────────────────────────┐
-                   │  app/api/process         │     │  app/api/resimplify      │
-                   │  vision → tokenise →     │     │  simplify(level,lang) →  │
-                   │  (simplify ∥ injection)  │     │  faithfulness → render   │
-                   │  → faithfulness → render │     │  ~22s per toggle         │
-                   └────────────┬─────────────┘     └────────────┬─────────────┘
-                                │                                │
-                                └────────────┬───────────────────┘
-                                             ▼
-                   ┌─────────────────────────────────────────────────────────┐
-                   │  Gemini 2.5 Flash (lib/gemini_client.ts)                │
-                   │  vision · structured JSON · multilingual · 1M context   │
-                   │  RECITATION-aware error class; thinkingBudget = 0       │
-                   └─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  Browser (Next.js client, app/page.tsx state machine)           │
+│  idle → processing → result → error                             │
+│  Per-(level, language) cache; vault round-trip; no logs         │
+└────────────────────┬───────────────────────┬────────────────────┘
+                     │                       │
+       POST /api/process (multipart)     POST /api/resimplify (JSON)
+                     │                       │
+                     ▼                       ▼
+       ┌──────────────────────────┐ ┌──────────────────────────┐
+       │  app/api/process         │ │  app/api/resimplify      │
+       │  vision → tokenise →     │ │  simplify(level, lang) → │
+       │  (simplify ∥ injection)  │ │  faithfulness → render   │
+       │  → faithfulness → render │ │  ~22s per toggle         │
+       └────────────┬─────────────┘ └────────────┬─────────────┘
+                    │                            │
+                    └─────────────┬──────────────┘
+                                  ▼
+              ┌─────────────────────────────────────────────┐
+              │  Gemini 2.5 Flash (lib/gemini_client.ts)    │
+              │  vision · structured JSON · multilingual    │
+              │  · 1M context · RECITATION-aware error      │
+              │  class · thinkingBudget = 0                 │
+              └─────────────────────────────────────────────┘
 
-                   ┌─────────────────────────────────────────────────────────┐
-                   │  Browser-side ISL                                        │
-                   │  GET /api/isl-dictionary  →  10,243 entries with        │
-                   │    videoUrl rewritten to /api/isl-video/<fileId>         │
-                   │  GET /api/isl-video/<fileId>  →  Drive bytes piped       │
-                   │    through our origin (key server-only, CORS dodged)     │
-                   │  Play-all sequencer walks chips in document order        │
-                   └─────────────────────────────────────────────────────────┘
+       ┌──────────────────────────────────────────────────────┐
+       │  Browser-side ISL                                    │
+       │                                                      │
+       │  GET /api/isl-dictionary                             │
+       │      → 10,243 entries with videoUrl rewritten to     │
+       │        /api/isl-video/<fileId>                       │
+       │                                                      │
+       │  GET /api/isl-video/<fileId>                         │
+       │      → Drive bytes piped through our origin          │
+       │        (key server-only, CORS dodged)                │
+       │                                                      │
+       │  Play-all sequencer walks chips in document order    │
+       └──────────────────────────────────────────────────────┘
 ```
 
 ### The five LLM calls (per document, in order)
 
 ```
-                   ┌─────────────────┐
-                   │  1. Extraction  │  vision pass over the raw images;
-                   │     prompt:     │  emits typed JSON: paragraphs,
-                   │     extract.md  │  critical_fields, action_items,
-                   └─────────────────┘  warning_signs, pii_spans
-                            │
-              tokeniseExtraction (regex + LLM-supplied PII spans)
-                            │
-                            ▼
-        ┌────────────────────────────────────┐
-        │  2. Simplification     │  3. Injection check  │
-        │  prompt: simplify.md   │  prompt:             │
-        │  emits {{cN}} placeholders;
-        │  level + language guidance appended at runtime
-        └────────────────────────────────────┘
-                            │
-                            ▼
-                   ┌────────────────────┐
-                   │  4. Faithfulness   │  audits the simplification's
-                   │     prompt:        │  critical-field set against the
-                   │  faithfulness.md   │  extraction's; verdict-aware retry
-                   └────────────────────┘
-                            │  (if not VERIFIED with differences)
-                            ▼
-                   ┌────────────────────┐
-                   │  5. Re-simplify    │  same prompt as step 2 with the
-                   │     with judge     │  judge's findings as extraGuidance
-                   │     findings       │
-                   └────────────────────┘
+       ┌──────────────────────┐
+       │  1. Extraction       │  vision pass over the raw images;
+       │     prompt:          │  emits typed JSON: paragraphs,
+       │     extract.md       │  critical_fields, action_items,
+       └──────────┬───────────┘  warning_signs, pii_spans
+                  │
+                  ▼
+       tokeniseExtraction (regex + LLM-supplied PII spans)
+                  │
+                  ▼
+       ┌──────────────────────────┬──────────────────────────┐
+       │  2. Simplification       │  3. Injection check      │
+       │     prompt:              │     prompt:              │
+       │     simplify.md          │     injection_check.md   │
+       │                          │                          │
+       │  emits {{cN}} place-     │  flags adversarial       │
+       │  holders; level +        │  content directed at an  │
+       │  language guidance       │  automated assistant     │
+       │  appended at runtime     │  (CLEAN | SUSPICIOUS)    │
+       └──────────────┬───────────┴──────────────────────────┘
+                      │  (simplification feeds the next stage)
+                      ▼
+       ┌──────────────────────┐
+       │  4. Faithfulness     │  audits the simplification's
+       │     prompt:          │  critical-field set against the
+       │     faithfulness.md  │  extraction's; verdict-aware retry
+       └──────────┬───────────┘
+                  │  (if not VERIFIED, with differences)
+                  ▼
+       ┌──────────────────────┐
+       │  5. Re-simplify      │  same prompt as step 2, with the
+       │     with judge       │  judge's findings as extraGuidance;
+       │     findings         │  re-judged on the second pass
+       └──────────────────────┘
 ```
 
 ---
