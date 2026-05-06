@@ -6,10 +6,12 @@ import { ActionItemsPanel } from "@/components/ActionItemsPanel";
 import { SafetyBadges } from "@/components/SafetyBadges";
 import { AudioPlayer } from "@/components/AudioPlayer";
 import { InjectionNotice } from "@/components/InjectionNotice";
+import { ReadingFormSlider } from "@/components/ReadingFormSlider";
 import type {
   Extraction,
   FaithfulnessResult,
   InjectionCheckResult,
+  ReadingLevel,
   Simplification,
 } from "@/lib/types";
 
@@ -21,6 +23,10 @@ interface Props {
   faithfulness: FaithfulnessResult | null;
   injection: InjectionCheckResult | null;
   meta: { totalLatencyMs: number; pages: number };
+  readingLevel: ReadingLevel;
+  onReadingLevelChange: (level: ReadingLevel) => void;
+  regenerating: boolean;
+  regenerationError: string | null;
 }
 
 export function SideBySideViewer({
@@ -31,6 +37,10 @@ export function SideBySideViewer({
   faithfulness,
   injection,
   meta,
+  readingLevel,
+  onReadingLevelChange,
+  regenerating,
+  regenerationError,
 }: Props) {
   return (
     <section className="px-6 lg:px-12 pt-8 pb-32">
@@ -68,22 +78,42 @@ export function SideBySideViewer({
         </aside>
 
         <article className="lg:col-span-7 fade-up fade-up-delay-2">
-          <div className="flex items-center justify-between mb-4">
-            <p className="mono-label">— in plain words</p>
+          <div className="flex items-start justify-between gap-6 mb-6">
+            <ReadingFormSlider
+              value={readingLevel}
+              onChange={onReadingLevelChange}
+              busy={regenerating}
+            />
             <AudioPlayer simplification={simplification} />
           </div>
 
-          <SimplifiedText simplification={simplification} />
-
-          {(simplification.simplified_actions.length > 0 ||
-            simplification.warnings_plain.length > 0) && (
-            <div className="mt-12">
-              <ActionItemsPanel
-                actions={simplification.simplified_actions}
-                warnings={simplification.warnings_plain}
-              />
-            </div>
+          {regenerationError && (
+            <p
+              className="mono-label mb-4"
+              style={{ color: "var(--rust)", fontSize: "10px" }}
+            >
+              — {regenerationError}
+            </p>
           )}
+
+          <div
+            style={{
+              opacity: regenerating ? 0.5 : 1,
+              transition: "opacity 200ms ease",
+            }}
+          >
+            <SimplifiedText simplification={simplification} />
+
+            {(simplification.simplified_actions.length > 0 ||
+              simplification.warnings_plain.length > 0) && (
+              <div className="mt-12">
+                <ActionItemsPanel
+                  actions={simplification.simplified_actions}
+                  warnings={simplification.warnings_plain}
+                />
+              </div>
+            )}
+          </div>
         </article>
       </div>
     </section>

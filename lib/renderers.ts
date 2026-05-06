@@ -4,10 +4,12 @@ import path from "node:path";
 import { callGemini } from "@/lib/gemini_client";
 import { parseSimplification } from "@/lib/validator";
 import { reconstruct, type PIIVault } from "@/lib/pii_vault";
-import type {
-  CriticalField,
-  Extraction,
-  Simplification,
+import {
+  DEFAULT_READING_LEVEL,
+  type CriticalField,
+  type Extraction,
+  type ReadingLevel,
+  type Simplification,
 } from "@/lib/types";
 
 const MAX_ATTEMPTS = 3;
@@ -19,6 +21,9 @@ export interface SimplifyInput {
   /** Optional extra guidance appended to the prompt — used by the faithfulness
    *  retry loop to feed back judge findings ("you omitted c5; reference it"). */
   extraGuidance?: string;
+  /** Reading-form preference. Determines the form of the output (paragraphs,
+   *  shorter sentences, or as-a-list). Default: "paragraphs". */
+  level?: ReadingLevel;
 }
 
 export interface SimplifyResult {
@@ -58,6 +63,8 @@ export async function simplify(input: SimplifyInput): Promise<SimplifyResult> {
   let lastErrors: string[] = [];
   let lastRawExcerpt = "";
 
+  const level = input.level ?? DEFAULT_READING_LEVEL;
+
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const prompt = buildPrompt(
       basePrompt,
@@ -65,6 +72,7 @@ export async function simplify(input: SimplifyInput): Promise<SimplifyResult> {
       lastErrors,
       attempt,
       input.extraGuidance,
+      level,
     );
 
     const raw = await callGemini(prompt);
@@ -182,7 +190,8 @@ function buildPrompt(
   redactedExtraction: Extraction,
   lastErrors: string[],
   attempt: number,
-  extraGuidance?: string,
+  extraGuidance: string | undefined,
+  level: ReadingLevel,
 ): string {
   const inputSection = `\n\n---\n\n## Input extraction\n\n\`\`\`json\n${JSON.stringify(redactedExtraction, null, 2)}\n\`\`\`\n`;
 
@@ -197,7 +206,41 @@ function buildPrompt(
     ? `\n\n---\n\n## Additional guidance\n\n${extraGuidance}\n`
     : "";
 
-  return base + inputSection + retrySection + extraSection;
+  const levelSection = levelGuidance(level)
+    ? `\n\n---\n\n## Output form\n\n${levelGuidance(level)}\n`
+    : "";
+
+  return base + inputSection + retrySection + extraSection + levelSection;
+}
+
+/** Constraint string folded into the simplify prompt to control the *form* of
+ *  the output (not the user's reading skill). The base prompt already targets
+ *  ~5th-grade reading level; this just shapes the layout and sentence length. */
+function levelGuidance(level: ReadingLevel): string {
+  switch (level) {
+    case "paragraphs":
+      return ""; // default — no extra constraint
+    case "shorter":
+      return [
+        "Form: shorter sentences.",
+        "- Every sentence must be ≤ 8 words.",
+        "- One idea per sentence.",
+        "- No multi-clause sentences. No commas chaining ideas.",
+        "- Keep section headings as before. The body is still prose, just tighter.",
+        "- Every {{cN}} placeholder still counts as one word and stays inside the sentence it belongs to.",
+      ].join("\n");
+    case "list":
+      return [
+        "Form: each fact on its own line.",
+        "- Break every section body into a bulleted list. One bullet per fact.",
+        "- Each bullet is a single sentence ≤ 6 words.",
+        "- Use the exact bullet character `•` followed by a space.",
+        "- Bullets are separated by `\\n` inside the section body.",
+        "- Section headings stay as before.",
+        "- Action items and warnings stay in their existing array structure (do not bullet those — they already are lists).",
+        "- Every {{cN}} placeholder still counts as one word and stays inside the bullet it belongs to.",
+      ].join("\n");
+  }
 }
 
 /**

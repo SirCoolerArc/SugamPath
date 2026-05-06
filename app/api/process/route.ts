@@ -253,6 +253,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     redactedExtraction,
     simplification: finalSimplification,
     vaultSize: vault.size,
+    vault: [...vault.entries()],
     warnings: [
       ...extractionWarnings,
       ...simplificationWarnings,

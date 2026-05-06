@@ -5,11 +5,13 @@ import { useCallback, useState } from "react";
 import { DocumentUploader } from "@/components/DocumentUploader";
 import { ProcessingStage } from "@/components/ProcessingStage";
 import { SideBySideViewer } from "@/components/SideBySideViewer";
-import type {
-  Extraction,
-  FaithfulnessResult,
-  InjectionCheckResult,
-  Simplification,
+import {
+  DEFAULT_READING_LEVEL,
+  type Extraction,
+  type FaithfulnessResult,
+  type InjectionCheckResult,
+  type ReadingLevel,
+  type Simplification,
 } from "@/lib/types";
 
 interface ProcessSuccess {
@@ -17,10 +19,18 @@ interface ProcessSuccess {
   redactedExtraction: Extraction;
   simplification: Simplification;
   vaultSize: number;
+  vault: Array<[string, string]>;
   warnings: string[];
   faithfulness: FaithfulnessResult | null;
   injection: InjectionCheckResult | null;
   meta: { totalLatencyMs: number; pages: number };
+}
+
+/** Cached resimplify result per reading level — avoids re-calling Gemini when
+ *  the user toggles back to a level they've already seen this session. */
+interface CachedLevelResult {
+  simplification: Simplification;
+  faithfulness: FaithfulnessResult | null;
 }
 
 interface ProcessError {
@@ -34,7 +44,16 @@ interface ProcessError {
 type Stage =
   | { kind: "idle" }
   | { kind: "processing"; files: File[]; previews: string[] }
-  | { kind: "result"; data: ProcessSuccess; previews: string[]; files: File[] }
+  | {
+      kind: "result";
+      data: ProcessSuccess;
+      previews: string[];
+      files: File[];
+      readingLevel: ReadingLevel;
+      cache: Partial<Record<ReadingLevel, CachedLevelResult>>;
+      regenerating: boolean;
+      regenerationError: string | null;
+    }
   | { kind: "error"; error: ProcessError; previews: string[]; files: File[] };
 
 export default function Home() {
@@ -71,7 +90,23 @@ export default function Home() {
         });
         return;
       }
-      setStage({ kind: "result", data: body as ProcessSuccess, previews, files });
+      const data = body as ProcessSuccess;
+      setStage({
+        kind: "result",
+        data,
+        previews,
+        files,
+        readingLevel: DEFAULT_READING_LEVEL,
+        // Seed the cache with the initial-load result so flicking back is free.
+        cache: {
+          [DEFAULT_READING_LEVEL]: {
+            simplification: data.simplification,
+            faithfulness: data.faithfulness,
+          },
+        },
+        regenerating: false,
+        regenerationError: null,
+      });
     } catch (err) {
       setStage({
         kind: "error",
@@ -90,6 +125,109 @@ export default function Home() {
     if (stage.kind !== "error") return;
     void handleSubmit(stage.files, stage.previews);
   }, [stage, handleSubmit]);
+
+  const handleLevelChange = useCallback(
+    async (next: ReadingLevel) => {
+      if (stage.kind !== "result") return;
+      if (stage.regenerating) return;
+      if (next === stage.readingLevel) return;
+
+      // Cache hit — swap instantly without any network.
+      const cached = stage.cache[next];
+      if (cached) {
+        setStage((s) =>
+          s.kind === "result"
+            ? {
+                ...s,
+                readingLevel: next,
+                regenerationError: null,
+                data: {
+                  ...s.data,
+                  simplification: cached.simplification,
+                  faithfulness: cached.faithfulness,
+                },
+              }
+            : s,
+        );
+        return;
+      }
+
+      // Cache miss — call /api/resimplify. Keep the previous simplification
+      // visible (faded) until the response arrives.
+      setStage((s) =>
+        s.kind === "result" ? { ...s, regenerating: true, regenerationError: null } : s,
+      );
+
+      try {
+        const res = await fetch("/api/resimplify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            redactedExtraction: stage.data.redactedExtraction,
+            extraction: stage.data.extraction,
+            vault: stage.data.vault,
+            level: next,
+          }),
+        });
+        const text = await res.text();
+        let body: {
+          simplification?: Simplification;
+          faithfulness?: FaithfulnessResult | null;
+          error?: string;
+        };
+        try {
+          body = JSON.parse(text);
+        } catch {
+          body = { error: "Server returned a response we could not read." };
+        }
+
+        if (!res.ok || !body.simplification) {
+          setStage((s) =>
+            s.kind === "result"
+              ? {
+                  ...s,
+                  regenerating: false,
+                  regenerationError: regenerationErrorMessage(res.status, body.error, next),
+                }
+              : s,
+          );
+          return;
+        }
+
+        const newCacheEntry: CachedLevelResult = {
+          simplification: body.simplification,
+          faithfulness: body.faithfulness ?? null,
+        };
+        setStage((s) =>
+          s.kind === "result"
+            ? {
+                ...s,
+                readingLevel: next,
+                regenerating: false,
+                regenerationError: null,
+                cache: { ...s.cache, [next]: newCacheEntry },
+                data: {
+                  ...s.data,
+                  simplification: newCacheEntry.simplification,
+                  faithfulness: newCacheEntry.faithfulness,
+                },
+              }
+            : s,
+        );
+      } catch (err) {
+        setStage((s) =>
+          s.kind === "result"
+            ? {
+                ...s,
+                regenerating: false,
+                regenerationError: `couldn't switch form (${err instanceof Error ? err.message : "network error"}); keeping the previous version`,
+              }
+            : s,
+        );
+      }
+    },
+    [stage],
+  );
 
   const reset = useCallback(() => {
     if (stage.kind !== "idle") {
@@ -121,6 +259,10 @@ export default function Home() {
           faithfulness={stage.data.faithfulness}
           injection={stage.data.injection}
           meta={stage.data.meta}
+          readingLevel={stage.readingLevel}
+          onReadingLevelChange={handleLevelChange}
+          regenerating={stage.regenerating}
+          regenerationError={stage.regenerationError}
         />
       )}
 
@@ -232,6 +374,26 @@ interface ErrorPresentation {
   headline: string;
   body: string;
   allowRetrySame: boolean; // show the "try again with same document" button
+}
+
+/** Short inline message shown next to the slider when /api/resimplify fails.
+ *  Stays kind, names what failed, and reassures the user the previous view is
+ *  still on screen. */
+function regenerationErrorMessage(
+  status: number,
+  serverError: string | undefined,
+  attemptedLevel: ReadingLevel,
+): string {
+  const _ = serverError; // kept for future tailored copy if specific 4xx shapes emerge
+  void _;
+  void attemptedLevel;
+  if (status === 502) {
+    return "the model is busy; keeping the previous version";
+  }
+  if (status === 422) {
+    return "couldn't switch form for this document; keeping the previous version";
+  }
+  return "couldn't switch form; keeping the previous version";
 }
 
 function presentError(error: ProcessError): ErrorPresentation {

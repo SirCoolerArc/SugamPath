@@ -142,6 +142,15 @@ export function extractionInvariantViolations(e: Extraction): string[] {
   return errors;
 }
 
+// ─── Reading-form levels (Stage 1 #16) ───────────────────────────────────────
+// Three positions on the client-side slider — see components/ReadingFormSlider.
+// Server uses the level to append a constraint to the simplifier prompt; the
+// underlying pipeline (faithfulness, render, vault reconstruction) is identical
+// across levels.
+export const READING_LEVELS = ["paragraphs", "shorter", "list"] as const;
+export type ReadingLevel = (typeof READING_LEVELS)[number];
+export const DEFAULT_READING_LEVEL: ReadingLevel = "paragraphs";
+
 // ─── Simplification (Checkpoint 4.3 output) ──────────────────────────────────
 // What the simplifier emits, before any client-side post-processing. Critical
 // field references appear as `{{cN}}` placeholders that the renderer
@@ -250,6 +259,7 @@ export interface ProcessResponse {
   redactedExtraction: Extraction;    // tokenised form (what the simplifier saw)
   simplification: Simplification;    // PII reconstructed; {{cN}} substituted to HTML spans
   vaultSize: number;                 // for the "PII vaulted" badge
+  vault: Array<[string, string]>;    // serialised PIIVault — needed client-side for /api/resimplify
   warnings: string[];                // any non-fatal extraction notes
   faithfulness: FaithfulnessResult | null; // null only if the judge call itself errored
   injection: InjectionCheckResult | null;  // null only if the detector call itself errored
