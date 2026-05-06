@@ -41,7 +41,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Accept either a single `document` file or multiple `document` files
   // (one per page). FormData.getAll preserves submission order, which we
   // rely on so multi-page docs reach the extractor in correct page order.
-  const fileEntries = form.getAll("document").filter((v): v is File => v instanceof File);
+  const fileEntries = form.getAll("document").filter(
+    (v): v is File => typeof v === "object" && v !== null && typeof (v as Blob).arrayBuffer === "function" && "name" in v,
+  );
   if (fileEntries.length === 0) {
     return NextResponse.json(
       { error: "No 'document' file in form data. Send one or more files in the 'document' field." },
