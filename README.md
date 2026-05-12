@@ -39,89 +39,68 @@ A user can:
 
 ## How it's built — architecture at a glance
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Browser (Next.js client, app/page.tsx state machine)           │
-│  idle → processing → result → error                             │
-│  Per-(level, language) cache; vault round-trip; no logs         │
-│  Optional voice query at upload via Web Speech API              │
-└─────────────┬─────────────────────┬────────────────┬────────────┘
-              │                     │                │
-   POST /api/process       POST /api/resimplify   POST /api/query
-   (multipart)             (JSON)                 (multipart + question)
-              │                     │                │
-              ▼                     ▼                ▼
-   ┌─────────────────────┐ ┌──────────────────┐ ┌───────────────────┐
-   │  app/api/process    │ │ app/api/         │ │ app/api/query     │
-   │  vision → tokenise  │ │   resimplify     │ │  vision →         │
-   │  → (simplify ∥      │ │  simplify(level, │ │  one-shot answer  │
-   │    injection) →     │ │    lang) →       │ │  refuses advice;  │
-   │  faithfulness →     │ │  faithfulness    │ │  answers in the   │
-   │  render             │ │  → render        │ │  asker's language │
-   └──────────┬──────────┘ └────────┬─────────┘ └─────────┬─────────┘
-              │                     │                     │
-              └─────────────────────┼─────────────────────┘
-                                    ▼
-              ┌─────────────────────────────────────────────┐
-              │  Gemini 2.5 Flash (lib/gemini_client.ts)    │
-              │  vision · structured JSON · multilingual    │
-              │  · 1M context · RECITATION-aware error      │
-              │  class · thinkingBudget = 0                 │
-              └─────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    classDef pipeline fill:#ffffff,stroke:#1e1e1e,stroke-width:2px,color:#1e1e1e
+    classDef safety fill:#fef3c7,stroke:#92400e,stroke-width:1.5px,color:#92400e
+    classDef gemini fill:#dbeafe,stroke:#1d4ed8,stroke-width:2px,color:#1d4ed8
+    classDef isl fill:#dcfce7,stroke:#15803d,stroke-width:2px,color:#15803d
+    classDef secondary fill:#f3f4f6,stroke:#9ca3af,stroke-width:1.5px,color:#374151
+    classDef browser fill:#ffffff,stroke:#1e1e1e,stroke-width:3px,color:#1e1e1e
 
-       ┌──────────────────────────────────────────────────────┐
-       │  Browser-side ISL                                    │
-       │                                                      │
-       │  GET /api/isl-dictionary                             │
-       │      → 10,243 entries with videoUrl rewritten to     │
-       │        /api/isl-video/<fileId>                       │
-       │                                                      │
-       │  GET /api/isl-video/<fileId>                         │
-       │      → Drive bytes piped through our origin          │
-       │        (key server-only, CORS dodged)                │
-       │                                                      │
-       │  Play-all sequencer walks chips in document order    │
-       └──────────────────────────────────────────────────────┘
+    subgraph BROWSER_TIER["BROWSER TIER"]
+        B["Browser\nNext.js client · idle → processing → result → error\nPer-level/language cache · Web Speech API (voice query)"]:::browser
+    end
+
+    B -->|"POST /api/process — document upload"| E
+    B -. "POST /api/resimplify" .-> RS
+    B -. "POST /api/query" .-> Q
+
+    subgraph API_TIER["API SERVER TIER"]
+        RS["secondary: /api/resimplify\nsimplify → faithfulness → render\nCache hit = instant swap"]:::secondary
+        Q["secondary: /api/query\nVision → one-shot answer\nRefuses advice · answers in asker's language"]:::secondary
+
+        E["1. Extract\nVision pass over document images\nparagraphs · critical_fields · action_items · pii_spans\nextract.md · Zod validation · retry x2 on schema failure"]:::pipeline
+        PII["🔒 PII Vault\nPass 1: 16 regex patterns — Latin + Devanagari label cues\nPass 2: LLM pii_spans merged\nNAME_001 · AADHAAR_001 · DATE_001 …\nRequest-scoped Map · never logged · never sent to client"]:::safety
+        E -.-> PII
+
+        E -->|"tokenised extraction"| S & I
+
+        S["2a. Simplify\nsimplify.md\nEmits cN placeholders — LLM never sees verbatim values\nLevel + language appended at runtime"]:::pipeline
+        I["2b. Injection Check\ninjection_check.md\nVerdict: CLEAN or SUSPICIOUS\nFlags adversarial directives aimed at the model"]:::pipeline
+
+        CFL["🔐 Critical-field lock\nSubstitution runs in code after LLM is done\ncN → verbatim value in typed span\nLLM cannot paraphrase a dose — structural, not prompted"]:::safety
+        ADV["🛡 Adversarial defence\nSeparate guardrail call — independent of simplification\nSUSPICIOUS → rust-accent banner in UI"]:::safety
+        S -.-> CFL
+        I -.-> ADV
+
+        S -->|"post-substitution simplification"| F
+        F["3. Faithfulness Judge\nfaithfulness.md\nAudits critical fields: extraction vs simplification\nVERIFIED · VERIFIED_WITH_OMISSIONS · UNVERIFIED\nLanguage-aware — Hindi paraphrases not false-flagged"]:::pipeline
+        FC["⚖️ Faithfulness check\nSystem second-guesses itself\nUNVERIFIED → retry simplifier with judge findings\nSecond pass re-judged · verdict shown on safety badge"]:::safety
+        F -.-> FC
+
+        F -->|"verified simplification"| R
+        R["4. Render and Reconstruct\napplyCriticalFieldSubstitution · PII tokens → real values\nISL chip resolution — 10,243 ISLRTC entries\nAction items panel · safety badges"]:::pipeline
+    end
+
+    R -->|"response JSON"| RESP["Response → Browser\nsimplified text · ISL chips · action items · safety badges"]:::pipeline
+
+    subgraph ISL_PROXY["ISL PROXY"]
+        ISLAPI["GET /api/isl-dictionary\nRewrites Drive URLs → /api/isl-video/fileId · 10,243 entries"]:::isl
+        ISLVID["GET /api/isl-video/fileId\nPipes Drive bytes through origin\nAPI key server-only · CORS solved"]:::isl
+        ISLSEQ["Play-all sequencer — lib/isl_sequencer.ts\nWalks chips in document order\nFloating player · sync text highlight"]:::isl
+    end
+
+    ISL_PROXY -->|"inline sign video — no bundle key exposure"| B
+
+    subgraph LLM_TIER["LLM TIER"]
+        G["Gemini 2.5 Flash\nlib/gemini_client.ts — sole SDK import point\nVision · structured JSON · multilingual · 1M context · thinkingBudget=0\nProvider abstracted: swap model in one file"]:::gemini
+    end
+
+    E & S & I & F & Q -.->|"LLM calls"| G
 ```
 
-### The five LLM calls (per document, in order)
-
-```
-       ┌──────────────────────┐
-       │  1. Extraction       │  vision pass over the raw images;
-       │     prompt:          │  emits typed JSON: paragraphs,
-       │     extract.md       │  critical_fields, action_items,
-       └──────────┬───────────┘  warning_signs, pii_spans
-                  │
-                  ▼
-       tokeniseExtraction (regex + LLM-supplied PII spans)
-                  │
-                  ▼
-       ┌──────────────────────────┬──────────────────────────┐
-       │  2. Simplification       │  3. Injection check      │
-       │     prompt:              │     prompt:              │
-       │     simplify.md          │     injection_check.md   │
-       │                          │                          │
-       │  emits {{cN}} place-     │  flags adversarial       │
-       │  holders; level +        │  content directed at an  │
-       │  language guidance       │  automated assistant     │
-       │  appended at runtime     │  (CLEAN | SUSPICIOUS)    │
-       └──────────────┬───────────┴──────────────────────────┘
-                      │  (simplification feeds the next stage)
-                      ▼
-       ┌──────────────────────┐
-       │  4. Faithfulness     │  audits the simplification's
-       │     prompt:          │  critical-field set against the
-       │     faithfulness.md  │  extraction's; verdict-aware retry
-       └──────────┬───────────┘
-                  │  (if not VERIFIED, with differences)
-                  ▼
-       ┌──────────────────────┐
-       │  5. Re-simplify      │  same prompt as step 2, with the
-       │     with judge       │  judge's findings as extraGuidance;
-       │     findings         │  re-judged on the second pass
-       └──────────────────────┘
-```
+*The four amber callouts are structural guarantees — mechanisms in the codebase, not policies in a prompt.*
 
 ---
 
