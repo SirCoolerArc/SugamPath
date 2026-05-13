@@ -43,7 +43,6 @@ A user can:
 flowchart TD
     classDef pipeline fill:#ffffff,stroke:#1e1e1e,stroke-width:2px,color:#1e1e1e
     classDef safety fill:#fef3c7,stroke:#92400e,stroke-width:1.5px,color:#92400e
-    classDef gemini fill:#dbeafe,stroke:#1d4ed8,stroke-width:2px,color:#1d4ed8
     classDef isl fill:#dcfce7,stroke:#15803d,stroke-width:2px,color:#15803d
     classDef secondary fill:#f3f4f6,stroke:#9ca3af,stroke-width:1.5px,color:#374151
     classDef browser fill:#ffffff,stroke:#1e1e1e,stroke-width:3px,color:#1e1e1e
@@ -56,7 +55,7 @@ flowchart TD
     B -. "POST /api/resimplify" .-> RS
     B -. "POST /api/query" .-> Q
 
-    subgraph API_TIER["API SERVER TIER"]
+    subgraph API_TIER["API SERVER TIER  —  all LLM calls via Gemini 2.5 Flash · lib/gemini_client.ts"]
         RS["secondary: /api/resimplify\nsimplify → faithfulness → render\nCache hit = instant swap"]:::secondary
         Q["secondary: /api/query\nVision → one-shot answer\nRefuses advice · answers in asker's language"]:::secondary
 
@@ -92,12 +91,6 @@ flowchart TD
     end
 
     ISL_PROXY -->|"inline sign video — no bundle key exposure"| B
-
-    subgraph LLM_TIER["LLM TIER"]
-        G["Gemini 2.5 Flash\nlib/gemini_client.ts — sole SDK import point\nVision · structured JSON · multilingual · 1M context · thinkingBudget=0\nProvider abstracted: swap model in one file"]:::gemini
-    end
-
-    E & S & I & F & Q -.->|"LLM calls"| G
 ```
 
 *The four amber callouts are structural guarantees — mechanisms in the codebase, not policies in a prompt.*
